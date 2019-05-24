@@ -1,12 +1,12 @@
 // ==UserScript==
-// @name         JavMiniDriver
+// @name         Jav小司机
 // @namespace    wddd
 // @version      1.0.0
 // @author       wddd
 // @license      MIT
 // @include      http*://*javlibrary.com/*
 // @include      http*://*javlib.com/*
-// @description  JavLib mini driver
+// @description  Jav小司机。简单轻量速度快！
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
 // @homepage     https://github.com/wdwind/JavMiniDriver
