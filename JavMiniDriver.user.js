@@ -155,6 +155,9 @@ function addStyle() {
             #preview {
                 margin-bottom: 20px;
             }
+            #preview video {
+                max-width: 100%;
+            }
             #full_screenshot {
                 cursor: pointer;
                 width: 15%;
@@ -480,8 +483,26 @@ class MiniDriver {
         }
 
         let dmm = async () => {
-            let editionNumber = this.editionNumber.replace('-', '').toLowerCase();
-            let request = {url: `https://www.dmm.co.jp/service/digitalapi/-/html5_player/=/cid=${editionNumber}/mtype=AhRVShI_/service=litevideo/mode=/width=560/height=360/`};
+            // Find dmm cid
+            let bingRequest = {url: `https://www.bing.com/search?q=${this.editionNumber.toLowerCase()}+site%3awww.dmm.co.jp`}
+            let bingResult = await gmFetch(bingRequest).catch(err => {console.log(err); return;});
+            let bingDoc = parseHTMLText(bingResult.responseText);
+            let pattern = /cid=[\w]+/g;
+            let dmmCid = '';
+            for (let match of bingDoc.body.innerHTML.match(pattern)) {
+                if (match.includes(this.editionNumber.toLowerCase().replace('-', '')) 
+                    || (match.includes(this.editionNumber.toLowerCase().split('-')[0]) 
+                            && match.includes(this.editionNumber.toLowerCase().split('-')[1]))) {
+                        dmmCid = match.replace('cid=', '');
+                        break;
+                    }
+            }
+
+            if (dmmCid == '') {
+                return;
+            }
+
+            let request = {url: `https://www.dmm.co.jp/service/digitalapi/-/html5_player/=/cid=${dmmCid}/mtype=AhRVShI_/service=litevideo/mode=/width=560/height=360/`};
             let result = await gmFetch(request).catch(err => {console.log(err); return;});
             let doc = parseHTMLText(result.responseText);
 
@@ -524,8 +545,16 @@ class MiniDriver {
             return doc.getElementsByTagName('source')[0].src;
         }
 
+        let kv = async () => {
+            if (this.editionNumber.includes('KV-')) {
+                return `http://fskvsample.knights-visual.com/samplemov/${this.editionNumber.toLowerCase()}-samp-st.mp4`;
+            }
+
+            return;
+        }
+
         Promise.all(
-            [r18, jav321, sod].map(source => source().catch(err => {console.log(err); return;}))
+            [jav321, r18, dmm, sod, kv].map(source => source().catch(err => {console.log(err); return;}))
         ).then(responses => {
             console.log(responses);
             for (let response of responses) {
