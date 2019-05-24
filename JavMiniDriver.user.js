@@ -9,6 +9,8 @@
 // @description  JavLib mini driver
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
+// @homepage     https://github.com/wdwind/JavMiniDriver
+// @downloadURL  https://github.com/wdwind/JavMiniDriver/raw/master/JavMiniDriver.user.js
 // ==/UserScript==
 
 // Credit to
