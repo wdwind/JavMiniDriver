@@ -470,7 +470,7 @@ class MiniDriver {
 
     getPreview() {
         let r18 = async () => {
-            let request = {url: `https://www.r18.com/common/search/order=match/searchword=${this.editionNumber}/`};
+            let request = {url: `https://www.r18.com/common/search/order=match/searchword='${this.editionNumber}'/`};
             let result = await gmFetch(request).catch(err => {console.log(err); return;});
             let video_tag = parseHTMLText(result.responseText).querySelector('.js-view-sample');
             let src = ['high', 'med', 'low']
