@@ -144,6 +144,9 @@ function addStyle() {
                 text-decoration-color: #CCCCCC;
             }
             */
+            #video_id .text {
+                color: red;
+            }
             #torrents > table {
                 width:100%;
                 text-align: center;
