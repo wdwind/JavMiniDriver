@@ -176,6 +176,15 @@ function addStyle() {
             }
         `);
     }
+
+    // Homepage
+    if (!window.location.href.includes('.php')) {
+        GM_addStyle(`
+            .videothumblist {
+                height: 645px !important;
+            }
+        `);
+    }
 }
 
 // Thumbnail
@@ -576,7 +585,7 @@ class MiniDriver {
                     let isVideoAvailableRequest = {
                         url: response,
                         method: 'HEAD',
-                        timeout: 2000,
+                        timeout: 5000,
                     };
                     try {
                         await gmFetch(isVideoAvailableRequest);
