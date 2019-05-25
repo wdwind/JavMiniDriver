@@ -65,6 +65,8 @@ function gmFetch(obj) {
     return new Promise((resolve, reject) => {
         GM_xmlhttpRequest({
             method: obj.method || 'GET',
+            // timeout in ms
+            timeout: obj.timeout,
             url: obj.url,
             headers: obj.headers,
             data: obj.data,
@@ -75,7 +77,8 @@ function gmFetch(obj) {
                     reject(result);
                 }
             },
-            onerror: reject
+            onerror: reject,
+            ontimeout: reject,
         });
     });
 }
@@ -86,6 +89,8 @@ function xhrFetch(obj) {
     return new Promise((resolve, reject) => {
         let xhr = new XMLHttpRequest();
         xhr.open(obj.method || 'GET', obj.url);
+        // timeout in ms
+        xhr.timeout = obj.timeout;
         if (obj.headers) {
             Object.keys(obj.headers).forEach(key => {
                 xhr.setRequestHeader(key, obj.headers[key]);
@@ -100,6 +105,7 @@ function xhrFetch(obj) {
             }
         };
         xhr.onerror = () => reject(xhr);
+        xhr.ontimeout = () => reject(xhr);
         xhr.send(obj.data);
     });
 };
@@ -472,6 +478,12 @@ class MiniDriver {
     }
 
     getPreview() {
+        let includesEditionNumber = (str) => {
+            return str != null
+                    && str.includes(this.editionNumber.toLowerCase().split('-')[0])
+                    && str.includes(this.editionNumber.toLowerCase().split('-')[1]);
+        }
+
         let r18 = async () => {
             let request = {url: `https://www.r18.com/common/search/order=match/searchword='${this.editionNumber}'/`};
             let result = await gmFetch(request).catch(err => {console.log(err); return;});
@@ -490,12 +502,10 @@ class MiniDriver {
             let pattern = /cid=[\w]+/g;
             let dmmCid = '';
             for (let match of bingDoc.body.innerHTML.match(pattern)) {
-                if (match.includes(this.editionNumber.toLowerCase().replace('-', '')) 
-                    || (match.includes(this.editionNumber.toLowerCase().split('-')[0]) 
-                            && match.includes(this.editionNumber.toLowerCase().split('-')[1]))) {
-                        dmmCid = match.replace('cid=', '');
-                        break;
-                    }
+                if (includesEditionNumber(match)) {
+                    dmmCid = match.replace('cid=', '');
+                    break;
+                }
             }
 
             if (dmmCid == '') {
@@ -512,7 +522,11 @@ class MiniDriver {
                     for (let line of script.innerText.split('\n')) {
                         if (line.includes('var params')) {
                             line = line.replace('var params =', '').replace(';', '');
-                            return JSON.parse(line).src;
+                            let videoSrc = JSON.parse(line).src;
+                            if (!videoSrc.startsWith('http')) {
+                                videoSrc = 'http:' + videoSrc;
+                            }
+                            return videoSrc;
                         }
                     }
                 }
@@ -555,17 +569,27 @@ class MiniDriver {
 
         Promise.all(
             [jav321, r18, dmm, sod, kv].map(source => source().catch(err => {console.log(err); return;}))
-        ).then(responses => {
+        ).then(async responses => {
             console.log(responses);
             for (let response of responses) {
-                if (response != null && !response.includes('//_sample.mp4')) {
-                    let previewHtml = `
-                        <div id="preview">
-                            <video src="${response}" controls autoplay></video>
-                        </div>
-                    `;
-                    insertAfter(createElementFromHTML(previewHtml), document.getElementById('torrents'));
-                    break;
+                if (response != null && includesEditionNumber(response) && !response.includes('//_sample.mp4')) {
+                    let isVideoAvailableRequest = {
+                        url: response,
+                        method: 'HEAD',
+                        timeout: 2000,
+                    };
+                    try {
+                        await gmFetch(isVideoAvailableRequest);
+                        let previewHtml = `
+                            <div id="preview">
+                                <video src="${response}" controls autoplay></video>
+                            </div>
+                        `;
+                        insertAfter(createElementFromHTML(previewHtml), document.getElementById('torrents'));
+                        break;
+                    } catch {
+                        continue;
+                    }
                 }
             }
         });
