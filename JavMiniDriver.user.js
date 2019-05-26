@@ -492,7 +492,7 @@ class MiniDriver {
     getPreview() {
         let includesEditionNumber = (str) => {
             return str != null
-                    && str.includes(this.editionNumber.toLowerCase().split('-')[0])
+                    // && str.includes(this.editionNumber.toLowerCase().split('-')[0])
                     && str.includes(this.editionNumber.toLowerCase().split('-')[1]);
         }
 
@@ -511,11 +511,11 @@ class MiniDriver {
             let bingRequest = {url: `https://www.bing.com/search?q=${this.editionNumber.toLowerCase()}+site%3awww.dmm.co.jp`}
             let bingResult = await gmFetch(bingRequest).catch(err => {console.log(err); return;});
             let bingDoc = parseHTMLText(bingResult.responseText);
-            let pattern = /cid=[\w]+/g;
+            let pattern = /(cid=[\w]+|pid=[\w]+)/g;
             let dmmCid = '';
             for (let match of bingDoc.body.innerHTML.match(pattern)) {
                 if (includesEditionNumber(match)) {
-                    dmmCid = match.replace('cid=', '');
+                    dmmCid = match.replace(/(cid=|pid=)/, '');
                     break;
                 }
             }
