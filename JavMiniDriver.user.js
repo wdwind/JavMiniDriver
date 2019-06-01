@@ -581,29 +581,23 @@ class MiniDriver {
 
         Promise.all(
             [jav321, r18, dmm, sod, kv].map(source => source().catch(err => {console.log(err); return;}))
-        ).then(async responses => {
+        ).then(responses => {
             console.log(responses);
-            for (let response of responses) {
-                if (response != null && includesEditionNumber(response) && !response.includes('//_sample.mp4')) {
-                    let isVideoAvailableRequest = {
-                        url: response,
-                        method: 'HEAD',
-                        timeout: 5000,
-                    };
-                    try {
-                        await gmFetch(isVideoAvailableRequest);
-                        let previewHtml = `
-                            <div id="preview">
-                                <video src="${response}" controls autoplay></video>
-                            </div>
-                        `;
-                        insertAfter(createElementFromHTML(previewHtml), document.getElementById('torrents'));
-                        break;
-                    } catch {
-                        continue;
-                    }
-                }
-            }
+
+            let videoHtml = responses
+                                .filter(response => response != null 
+                                        && includesEditionNumber(response) 
+                                        && !response.includes('//_sample.mp4'))
+                                .map(response => `<source src="${response}">`)
+                                .join('');
+            let previewHtml = `
+                <div id="preview">
+                    <video controls>
+                        ${videoHtml}
+                    </video>
+                </div>
+            `;
+            insertAfter(createElementFromHTML(previewHtml), document.getElementById('torrents'));
         });
     }
 }
