@@ -590,14 +590,16 @@ class MiniDriver {
                                         && !response.includes('//_sample.mp4'))
                                 .map(response => `<source src="${response}">`)
                                 .join('');
-            let previewHtml = `
-                <div id="preview">
-                    <video controls>
-                        ${videoHtml}
-                    </video>
-                </div>
-            `;
-            insertAfter(createElementFromHTML(previewHtml), document.getElementById('torrents'));
+            if (videoHtml != '') {
+                let previewHtml = `
+                    <div id="preview">
+                        <video controls>
+                            ${videoHtml}
+                        </video>
+                    </div>
+                `;
+                insertAfter(createElementFromHTML(previewHtml), document.getElementById('torrents'));
+            }
         });
     }
 }
