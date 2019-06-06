@@ -14,8 +14,8 @@
 // ==/UserScript==
 
 // Credit to
-//  * https://greasyfork.org/zh-CN/scripts/25781-jav%E8%80%81%E5%8F%B8%E6%9C%BA
-//  * https://greasyfork.org/zh-CN/scripts/37122-javlibrary-preview
+//  * https://greasyfork.org/zh-CN/scripts/25781
+//  * https://greasyfork.org/zh-CN/scripts/37122
 
 // Utils
 
