@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jav小司机
 // @namespace    wddd
-// @version      1.0.0
+// @version      1.1.0
 // @author       wddd
 // @license      MIT
 // @include      http*://*javlibrary.com/*
@@ -16,6 +16,16 @@
 // Credit to
 //  * https://greasyfork.org/zh-CN/scripts/25781
 //  * https://greasyfork.org/zh-CN/scripts/37122
+
+// Change log
+// 1.1.0
+/* 
+ * Simplify code by merging the functions for get more comments/reviews
+ * Process screenshots in reviews/comments
+   * Remove redirection
+   * Get full image url
+   * Add mouse click effect
+*/ 
 
 // Utils
 
@@ -167,9 +177,10 @@ function addStyle() {
             #preview video {
                 max-width: 100%;
             }
-            #full_screenshot {
+            .screenshot {
                 cursor: pointer;
-                width: 15%;
+                width: 25%;
+                display: block;
             }
             .clickToCopy {
                 cursor: pointer;
@@ -225,7 +236,7 @@ class MiniDriverThumbnail {
                 }
 
                 // Video watched
-                let videoWatched = '';
+                let videoWatched = '0';
                 if (videoDetailsDoc.getElementById('watched')) {
                     videoWatched = videoDetailsDoc.getElementById('watched').getElementsByTagName('a')[0].innerText;
                 }
@@ -329,22 +340,19 @@ class MiniDriver {
         }
     }
 
+    screenShotOnclick(element) {
+        if (element.style.width != '100%') {
+            element.style.width = '100%';
+        } else {
+            element.style.width = '25%';
+        }
+    }
+
     addScreenshot() {
         let imgUrl = `http://javscreens.com/images/${this.editionNumber}.jpg`;
-        let img = createElementFromHTML(`<img src="${imgUrl}" id="full_screenshot" title="">`);
+        let img = createElementFromHTML(`<img src="${imgUrl}" class="screenshot" title="">`);
         insertAfter(img, document.getElementById('video_favorite_edit'));
-
-        img.addEventListener('click', function() {
-            if (img.style.width != '100%') {
-                img.style.width = '100%';
-            } else {
-                img.style.width = '15%';
-                if (document.getElementById('full_screenshot').getBoundingClientRect().y < 0) {
-                    location.hash = '#full_screenshot';
-                    location.href = '#full_screenshot';
-                }
-            }
-        });
+        img.addEventListener('click', () => this.screenShotOnclick(img));
     }
 
     addTorrentLinks() {
@@ -392,46 +400,52 @@ class MiniDriver {
         });
 
         // Add all reviews
-        this.getReviews(1);
+        this.getNextPage(1, 'reviews');
     }
 
-    async getReviews(page) {
-        // Update current page
-        let loadMoreId = 'load_more_reviews';
+    async getNextPage(page, pageType) {
+        let loadMoreId = 'load_more_' + pageType;
+        let urlPath = 'video' + pageType;
+        let elementsId = 'video_' + pageType;
+        
+        // Load more reviews
+        let request = {url: `http://www.javlibrary.com/cn/${urlPath}.php?v=${this.javVideoId}&mode=2&page=${page}`};
+        let result = await xhrFetch(request).catch(err => {console.log(err); return;});
+        let doc = parseHTMLText(result.responseText);
+
+        // Remove the load more div in current page
         let loadMoreDiv = document.getElementById(loadMoreId);
         if (loadMoreDiv != null) {
             loadMoreDiv.parentNode.removeChild(loadMoreDiv);
         }
-
-        // Load more reviews
-        let request = {url: `http://www.javlibrary.com/cn/videoreviews.php?v=${this.javVideoId}&mode=2&page=${page}`};
-        let result = await xhrFetch(request).catch(err => {console.log(err); return;});
-        let reviewsDoc = parseHTMLText(result.responseText);
-
-        let videoReviews = reviewsDoc.getElementById('video_reviews');
-        if (videoReviews.getElementsByClassName('t').length == 0 || 
-                reviewsDoc.getElementsByClassName('page_selector').length == 0) {
+        
+        // Get comments/reviews in the next page
+        let elements = doc.getElementById(elementsId);
+        if (elements.getElementsByClassName('t').length == 0 || doc.getElementsByClassName('page_selector').length == 0) {
             return;
         }
-        // Set review texts
-        Array.from(videoReviews.getElementsByClassName('t')).forEach(review => {
-            review.getElementsByClassName('text')[0].innerHTML = parseBBCode(escapeHtml(review.getElementsByTagName('textarea')[0].innerText));
+
+        // Set element texts
+        Array.from(elements.getElementsByClassName('t')).forEach(element => {
+            let elementText = parseBBCode(escapeHtml(element.getElementsByTagName('textarea')[0].innerText));
+            let elementHtml = createElementFromHTML(`<div>${parseHTMLText(elementText).body.innerHTML}</div>`);
+            element.getElementsByClassName('text')[0].replaceWith(this.processScreenshot(elementHtml));
         });
 
-        // Append reviews to the page
-        let currentVideoReviews = document.getElementById('video_reviews');
-        let bottomLine = currentVideoReviews.getElementsByClassName('grey')[0];
-        Array.from(videoReviews.children).forEach(element => {
+        // Append elements to the page
+        let currentElements = document.getElementById(elementsId);
+        let bottomLine = currentElements.getElementsByClassName('grey')[0];
+        Array.from(elements.children).forEach(element => {
             if (element.tagName == 'TABLE') {
-                currentVideoReviews.insertBefore(element, bottomLine);
+                currentElements.insertBefore(element, bottomLine);
             }
         });
 
-        // Append load more if there are more reviews
-        let nextPage = reviewsDoc.getElementsByClassName('page next');
+        // Append load more if next page exists
+        let nextPage = doc.getElementsByClassName('page next');
         if (nextPage.length > 0) {
-            let loadMoreReviews = getLoadMoreButton(loadMoreId, async () => this.getReviews(page + 1));
-            insertAfter(loadMoreReviews, currentVideoReviews);
+            let loadMoreButton = getLoadMoreButton(loadMoreId, async () => this.getNextPage(page + 1, pageType));
+            insertAfter(loadMoreButton, currentElements);
         }
     }
 
@@ -445,48 +459,53 @@ class MiniDriver {
         });
 
         // Add all comments
-        this.getComments(1);
+        this.getNextPage(1, 'comments');
     }
 
-    async getComments(page) {
-        // Update current page
-        let loadMoreId = 'load_more_comments';
-        let loadMoreDiv = document.getElementById(loadMoreId);
-        if (loadMoreDiv != null) {
-            loadMoreDiv.parentNode.removeChild(loadMoreDiv);
-        }
+    processScreenshot(content) {
+        let sources = [
+            {regex: /imgspice/, process: (input) => input.replace(/_s|_t/, '')},
+            {regex: /t[\d]+\.pixhost/, process: (input) => input.replace(/t([\d]+\.)/, 'img$1').replace('/thumbs/', '/images/')},
+            {regex: /img[\d]+\.pixhost/, process: (input) => input},
+            {regex: /imagetwist/, process: (input) => input.replace('/th/', '/i/')},
+            {regex: /oloadcdn/, process: (input) => input},
+            {regex: /subyshare/, process: (input) => input},
+            {regex: /verystream/, process: (input) => input},
+            {regex: /iceimg/, process: (input) => input.replace('/ssd/small/', '/uploads3/pixsense/big/').replace('/small-', '/')},
+            {regex: /imgfrost/, process: (input) => input.replace('/small/small_', '/big/')},
+            {regex: /japanese\-bukkake/, process: (input) => input},
+            {regex: /picz\.in\.th/, process: (input) => input.replace('.md', '')},
+            {regex: /photosex/, process: (input) => input},
+            {regex: /imgtaxi/, process: (input) => input.replace('/small/', '/big/').replace('/small-medium/', '/big/')},
+            {regex: /sehuatuchuang/, process: (input) => input},
+            {regex: /900file/, process: (input) => input},
+            {regex: /avcensdownload/, process: (input) => input},
+        ];
 
-        // Load more comments
-        let request = {url: `http://www.javlibrary.com/cn/videocomments.php?v=${this.javVideoId}&mode=2&page=${page}`};
-        let result = await xhrFetch(request).catch(err => {console.log(err); return;});
-        let commentsDoc = parseHTMLText(result.responseText);
-
-        let videoComments = commentsDoc.getElementById('video_comments');
-        if (videoComments.getElementsByClassName('t').length == 0 || 
-                commentsDoc.getElementsByClassName('page_selector').length == 0) {
-            return;
-        }
-
-        // Set comment texts
-        Array.from(videoComments.getElementsByClassName('t')).forEach(comment => {
-            comment.getElementsByClassName('text')[0].innerHTML = parseBBCode(escapeHtml(comment.getElementsByTagName('textarea')[0].innerText));
+        // Get full img url
+        Array.from(content.getElementsByTagName('img')).forEach(img => {
+            if (img.src != null) {
+                for (let source of sources) {
+                    if (img.src.match(source.regex)) {
+                        let imgUrl = source.process(img.src);
+                        let screenshot = createElementFromHTML(`<img class="screenshot processed" referrerpolicy="no-referrer" src="${imgUrl}">`);
+                        screenshot.addEventListener('click', () => this.screenShotOnclick(screenshot));
+                        img.replaceWith(screenshot);
+                        break;
+                    }
+                }
+            }
         });
-
-        // Append comments to the page
-        let currentVideoComments = document.getElementById('video_comments');
-        let bottomLine = currentVideoComments.getElementsByClassName('grey')[0];
-        Array.from(videoComments.children).forEach(element => {
-            if (element.tagName == 'TABLE') {
-                currentVideoComments.insertBefore(element, bottomLine);
+        
+        // Remove the redirection
+        Array.from(content.getElementsByTagName('a')).forEach(element => {
+            let imgs = element.getElementsByTagName('img');
+            if (imgs.length == 1 && imgs[0].className.includes('processed')) {
+                element.replaceWith(imgs[0]);
             }
         });
 
-        // Append load more if there are more comments
-        let nextPage = commentsDoc.getElementsByClassName('page next');
-        if (nextPage.length > 0) {
-            let loadMoreComments = getLoadMoreButton(loadMoreId, async () => this.getComments(page + 1));
-            insertAfter(loadMoreComments, currentVideoComments);
-        }
+        return content;
     }
 
     getPreview() {
