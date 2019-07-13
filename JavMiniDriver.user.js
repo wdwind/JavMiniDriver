@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jav小司机
 // @namespace    wddd
-// @version      1.1.0
+// @version      1.1.1
 // @author       wddd
 // @license      MIT
 // @include      http*://*javlibrary.com/*
@@ -18,6 +18,16 @@
 //  * https://greasyfork.org/zh-CN/scripts/37122
 
 // Change log
+// 1.1.1
+/* 
+ * Issue: https://github.com/wdwind/JavMiniDriver/issues/1
+ * 
+ * Change thumbnail font
+ * Add page selector
+ * Add japanese-bukkake as backup image screenshot source
+ * Change image width to max-width when clicking the screenshot to prevent image being over zoomed
+ * Add more data sources for the screenshots in reviews/comments
+*/ 
 // 1.1.0
 /* 
  * Simplify code by merging the functions for get more comments/reviews
@@ -38,6 +48,10 @@ function setCookie(cookieName, cookieValue, expireDays) {
 
 function insertAfter(newNode, referenceNode) {
     referenceNode.parentNode.insertBefore(newNode, referenceNode.nextSibling);
+}
+
+function removeElement(element) {
+    return element.parentNode.removeChild(element);
 }
 
 function parseHTMLText(text) {
@@ -136,6 +150,34 @@ function addStyle() {
         .videothumblist .videos .video {
             height: 290px;
         }
+        .thumbnailDetail {
+            font-size: 14px;
+            margin-top: 2.5em;
+            color: #666666;
+        }
+        .page_selector {
+            display: none;
+            margin-bottom: 15px;
+        }
+        .load_more {
+            text-align: center;
+        }
+        #load_next_page {
+            margin-bottom: 10px;
+        }
+        #load_next_page_button {
+            display: inline;
+        }
+        #togglePageSelector {
+            margin-left: 20px;
+            font-size: 14px;
+            vertical-align: text-top;
+            display: inline;
+        }
+        .toggle {
+            cursor: pointer;
+            color: blue;
+        }
     `);
 
     // left menu
@@ -179,14 +221,11 @@ function addStyle() {
             }
             .screenshot {
                 cursor: pointer;
-                width: 25%;
+                max-width: 25%;
                 display: block;
             }
             .clickToCopy {
                 cursor: pointer;
-            }
-            .load_more {
-                text-align: center;
             }
         `);
     }
@@ -202,11 +241,20 @@ function addStyle() {
 }
 
 // Thumbnail
-
 class MiniDriverThumbnail {
 
     constructor() {
-        this.nextPageSelectorId = 'load_next_page';
+        this.loadMoreDivId = 'load_next_page';
+        this.loadMoreButtonId = 'load_next_page_button';
+        this.togglePageSelector = createElementFromHTML(
+            `<div id='togglePageSelector' class='toggle'>
+                显示页数
+            </div>`);
+        this.togglePageSelector.addEventListener('click', () => this.toggle());
+        let pageSelector = document.getElementsByClassName('page_selector')[0];
+        if (pageSelector) {
+            pageSelector.style.display = 'none';
+        }
     }
 
     execute() {
@@ -242,7 +290,7 @@ class MiniDriverThumbnail {
                 }
                 
                 let videoDetailsHtml = `
-                    <div>
+                    <div class="thumbnailDetail">
                         <span>${videoDate}</span>&nbsp;&nbsp;<span style='color:red;'>${videoScore}</span>
                         <br/>
                         <span>${videoWatched} 人看过</span>
@@ -268,28 +316,44 @@ class MiniDriverThumbnail {
                 videos[0].appendChild(video);
             });
         }
-        
-        let pageSelectorDiv = document.getElementsByClassName('page_selector')[0];
-        pageSelectorDiv.innerText = '';
+
+        // Remove existing load more button
+        removeElement(document.getElementById(this.loadMoreButtonId));
+
+        // Replace page selector content
+        let pageSelector = document.getElementsByClassName('page_selector')[0];
+        pageSelector.innerHTML = nextPageDoc.getElementsByClassName('page_selector')[0].innerHTML;
         
         // Add next page button
         let nextPage = nextPageDoc.getElementsByClassName('page next');
         if (nextPage.length > 0) {
             let nextPageUrl = nextPage[0].href;
-            let nextPageButton = getLoadMoreButton(this.nextPageSelectorId, async () => this.getNextPage(nextPageUrl));
-            pageSelectorDiv.appendChild(nextPageButton);
+            let loadMoreButton = getLoadMoreButton(this.loadMoreButtonId, async () => this.getNextPage(nextPageUrl));
+            document.getElementById(this.loadMoreDivId).prepend(loadMoreButton);
         }
     }
 
     updateNextPage() {
+        let loadMoreDiv = createElementFromHTML(`<div id='${this.loadMoreDivId}' class='load_more'></div>`);
+
         let nextPage = document.getElementsByClassName('page next');
         if (nextPage.length > 0) {
             let nextPageUrl = nextPage[0].href;
-            let nextPageButton = getLoadMoreButton('load_next_page', async () => this.getNextPage(nextPageUrl));
-            
-            let pageSelectorDiv = document.getElementsByClassName('page_selector')[0];
-            pageSelectorDiv.innerText = '';
-            pageSelectorDiv.appendChild(nextPageButton);
+            let loadMoreButton = getLoadMoreButton(this.loadMoreButtonId, async () => this.getNextPage(nextPageUrl));
+            loadMoreDiv.appendChild(loadMoreButton);
+            loadMoreDiv.appendChild(this.togglePageSelector);
+            document.getElementById('rightcolumn').appendChild(loadMoreDiv);
+        }
+    }
+
+    toggle() {
+        let pageSelector = document.getElementsByClassName('page_selector')[0];
+        if (pageSelector.style.display === 'none') {
+            pageSelector.style.display = 'block';
+            this.togglePageSelector.innerText = '隐藏页数';
+        } else {
+            pageSelector.style.display = 'none';
+            this.togglePageSelector.innerText = '显示页数';
         }
     }
 }
@@ -341,18 +405,40 @@ class MiniDriver {
     }
 
     screenShotOnclick(element) {
-        if (element.style.width != '100%') {
-            element.style.width = '100%';
+        if (element.style['max-width'] != '100%') {
+            element.style['max-width'] = '100%';
         } else {
-            element.style.width = '25%';
+            element.style['max-width'] = '25%';
         }
     }
 
-    addScreenshot() {
-        let imgUrl = `http://javscreens.com/images/${this.editionNumber}.jpg`;
-        let img = createElementFromHTML(`<img src="${imgUrl}" class="screenshot" title="">`);
-        insertAfter(img, document.getElementById('video_favorite_edit'));
-        img.addEventListener('click', () => this.screenShotOnclick(img));
+    async addScreenshot() {
+        let javscreensUrl = `http://javscreens.com/images/${this.editionNumber}.jpg`;
+        let videoDates = document.getElementById('video_date').getElementsByClassName('text')[0].innerText.split('-');
+        let jbUrl = `http://img.japanese-bukkake.net/${videoDates[0]}/${videoDates[1]}/${this.editionNumber}_s.jpg`;
+
+        for (let url of [javscreensUrl, jbUrl]) {
+            let img = await this.loadImg(url).catch(() => {return;});
+            if (img) {
+                if (img.naturalHeight < 200) {
+                    removeElement(img);
+                    continue;
+                }
+                break;
+            }
+        }
+    }
+
+    loadImg(url) {
+        console.log('Get screenshot '+ url);
+        return new Promise((resolve, reject) => {
+            let img = createElementFromHTML(`<img src="${url}" class="screenshot" title="">`);
+            insertAfter(img, document.getElementById('video_favorite_edit'));
+            img.addEventListener('click', () => this.screenShotOnclick(img));
+            
+            img.onload = () => resolve(img);
+            img.onerror = reject;
+        });
     }
 
     addTorrentLinks() {
@@ -477,9 +563,11 @@ class MiniDriver {
             {regex: /picz\.in\.th/, process: (input) => input.replace('.md', '')},
             {regex: /photosex/, process: (input) => input},
             {regex: /imgtaxi/, process: (input) => input.replace('/small/', '/big/').replace('/small-medium/', '/big/')},
+            {regex: /imgdrive/, process: (input) => input.replace('/small/', '/big/').replace('/small-medium/', '/big/')},
             {regex: /sehuatuchuang/, process: (input) => input},
             {regex: /900file/, process: (input) => input},
             {regex: /avcensdownload/, process: (input) => input},
+            {regex: /filesor/, process: (input) => input.replace('_s', '')},
         ];
 
         // Get full img url
