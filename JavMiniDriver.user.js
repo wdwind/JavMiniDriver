@@ -5,7 +5,6 @@
 // @author       wddd
 // @license      MIT
 // @include      http*://*javlibrary.com/*
-// @include      http*://*javlib.com/*
 // @description  Jav小司机。简单轻量速度快！
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
@@ -46,8 +45,20 @@ function setCookie(cookieName, cookieValue, expireDays) {
     document.cookie = cookieName + "=" + cookieValue + ";" + expires + ";path=/";
 }
 
+function getCookie(cookieName) {
+    let value = "; " + document.cookie;
+    let parts = value.split("; " + cookieName + "=");
+    if (parts.length == 2) {
+        return parts.pop().split(";").shift();
+    }
+}
+
 function insertAfter(newNode, referenceNode) {
     referenceNode.parentNode.insertBefore(newNode, referenceNode.nextSibling);
+}
+
+function insertBefore(newNode, referenceNode) {
+    referenceNode.parentNode.insertBefore(newNode, referenceNode);
 }
 
 function removeElement(element) {
@@ -246,15 +257,19 @@ class MiniDriverThumbnail {
     constructor() {
         this.loadMoreDivId = 'load_next_page';
         this.loadMoreButtonId = 'load_next_page_button';
-        this.togglePageSelector = createElementFromHTML(
-            `<div id='togglePageSelector' class='toggle'>
-                显示页数
-            </div>`);
-        this.togglePageSelector.addEventListener('click', () => this.toggle());
+
+        let showPageSelector = getCookie('showPageSelector') != 'block' ? 'none' : 'block';
         let pageSelector = document.getElementsByClassName('page_selector')[0];
         if (pageSelector) {
-            pageSelector.style.display = 'none';
+            pageSelector.style.display = showPageSelector;
         }
+
+        let toggleMessage = getCookie('showPageSelector') != 'block' ? '显示页数' : '隐藏页数';
+        this.togglePageSelector = createElementFromHTML(
+            `<div id='togglePageSelector' class='toggle'>
+                ${toggleMessage}
+            </div>`);
+        this.togglePageSelector.addEventListener('click', () => this.toggle());
     }
 
     execute() {
@@ -351,9 +366,11 @@ class MiniDriverThumbnail {
         if (pageSelector.style.display === 'none') {
             pageSelector.style.display = 'block';
             this.togglePageSelector.innerText = '隐藏页数';
+            setCookie('showPageSelector', 'block');
         } else {
             pageSelector.style.display = 'none';
             this.togglePageSelector.innerText = '显示页数';
+            setCookie('showPageSelector', 'none');
         }
     }
 }
@@ -433,7 +450,7 @@ class MiniDriver {
         console.log('Get screenshot '+ url);
         return new Promise((resolve, reject) => {
             let img = createElementFromHTML(`<img src="${url}" class="screenshot" title="">`);
-            insertAfter(img, document.getElementById('video_favorite_edit'));
+            insertBefore(img, document.getElementById('rightcolumn').getElementsByClassName('socialmedia')[0]);
             img.addEventListener('click', () => this.screenShotOnclick(img));
             
             img.onload = () => resolve(img);
