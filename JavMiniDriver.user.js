@@ -1,10 +1,12 @@
 // ==UserScript==
 // @name         Jav小司机
 // @namespace    wddd
-// @version      1.1.1
+// @version      1.1.2
 // @author       wddd
 // @license      MIT
 // @include      http*://*javlibrary.com/*
+// @include      http*://*javlib.com/*
+// @include      http*://*m34z.com/*
 // @description  Jav小司机。简单轻量速度快！
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
@@ -17,24 +19,32 @@
 //  * https://greasyfork.org/zh-CN/scripts/37122
 
 // Change log
+// 1.1.2
+/*
+ * Issue: https://greasyfork.org/zh-CN/forum/discussion/61213/x
+ *
+ * Minor updates
+ * Add javbus torrent search
+ * Add support for javlib.com and m34z.com
+*/
 // 1.1.1
-/* 
+/*
  * Issue: https://github.com/wdwind/JavMiniDriver/issues/1
- * 
+ *
  * Change thumbnail font
  * Add page selector
  * Add japanese-bukkake as backup image screenshot source
  * Change image width to max-width when clicking the screenshot to prevent image being over zoomed
  * Add more data sources for the screenshots in reviews/comments
-*/ 
+*/
 // 1.1.0
-/* 
+/*
  * Simplify code by merging the functions for get more comments/reviews
  * Process screenshots in reviews/comments
    * Remove redirection
    * Get full image url
    * Add mouse click effect
-*/ 
+*/
 
 // Utils
 
@@ -94,7 +104,7 @@ function getLoadMoreButton(buttonId, callback) {
 }
 
 // For the requests in different domains
-// GM_xmlhttpRequest is made from the background page, and as a result, it 
+// GM_xmlhttpRequest is made from the background page, and as a result, it
 // doesn't have cookies in the request header
 function gmFetch(obj) {
     return new Promise((resolve, reject) => {
@@ -270,6 +280,8 @@ class MiniDriverThumbnail {
                 ${toggleMessage}
             </div>`);
         this.togglePageSelector.addEventListener('click', () => this.toggle());
+
+        this.javUrl = new URL(window.location.href);
     }
 
     execute() {
@@ -281,7 +293,7 @@ class MiniDriverThumbnail {
         let videos = doc.querySelectorAll('.videothumblist .videos .video');
         Array.from(videos).forEach(async video => {
             if (video.id.includes('vid_')) {
-                let request = {url: `http://www.javlibrary.com/cn/?v=${video.id.substring(4)}`};
+                let request = {url: `${this.javUrl.origin}/cn/?v=${video.id.substring(4)}`};
                 let result = await xhrFetch(request).catch(err => {console.log(err); return;});
                 let videoDetailsDoc = parseHTMLText(result.responseText);
 
@@ -303,7 +315,7 @@ class MiniDriverThumbnail {
                 if (videoDetailsDoc.getElementById('watched')) {
                     videoWatched = videoDetailsDoc.getElementById('watched').getElementsByTagName('a')[0].innerText;
                 }
-                
+
                 let videoDetailsHtml = `
                     <div class="thumbnailDetail">
                         <span>${videoDate}</span>&nbsp;&nbsp;<span style='color:red;'>${videoScore}</span>
@@ -338,7 +350,7 @@ class MiniDriverThumbnail {
         // Replace page selector content
         let pageSelector = document.getElementsByClassName('page_selector')[0];
         pageSelector.innerHTML = nextPageDoc.getElementsByClassName('page_selector')[0].innerHTML;
-        
+
         // Add next page button
         let nextPage = nextPageDoc.getElementsByClassName('page next');
         if (nextPage.length > 0) {
@@ -403,15 +415,15 @@ class MiniDriver {
         let edition = document.getElementById('video_id').getElementsByClassName('text')[0];
         this.editionNumber = edition.innerText;
     }
-    
+
     async updateTitle() {
         let videoTitle = document.getElementById('video_title');
         let postTitle = videoTitle.getElementsByClassName('post-title')[0];
         postTitle.innerText = postTitle.getElementsByTagName('a')[0].innerText;
 
-        // Add English title 
+        // Add English title
         if (!window.location.href.includes('/en/')) {
-            let request = {url: `http://www.javlibrary.com/en/?v=${this.javVideoId}`};
+            let request = {url: `${this.javUrl.origin}/en/?v=${this.javVideoId}`};
             let result = await xhrFetch(request).catch(err => {console.log(err); return;});
             let videoDetailsDoc = parseHTMLText(result.responseText);
             let englishTitle = videoDetailsDoc.getElementById('video_title')
@@ -452,7 +464,7 @@ class MiniDriver {
             let img = createElementFromHTML(`<img src="${url}" class="screenshot" title="">`);
             insertBefore(img, document.getElementById('rightcolumn').getElementsByClassName('socialmedia')[0]);
             img.addEventListener('click', () => this.screenShotOnclick(img));
-            
+
             img.onload = () => resolve(img);
             img.onerror = reject;
         });
@@ -460,11 +472,11 @@ class MiniDriver {
 
     addTorrentLinks() {
         let sukebei = `https://sukebei.nyaa.si/?f=0&c=0_0&q=${this.editionNumber}`;
-        let btsow = `https://btsow.pw/search/${this.editionNumber}`;
-        let belibrary = `https://www.btlibrary.info/btlibrary/${this.editionNumber}/1-1-1-1.html`;
+        let btspread = `https://btspread.com/search/${this.editionNumber}`;
+        let javbus = `https://www.javbus.com/${this.editionNumber}`;
         let torrentKitty = `https://www.torrentkitty.tv/search/${this.editionNumber}`;
         let tokyotosho = `https://www.tokyotosho.info/search.php?terms=${this.editionNumber}`;
-        
+
         let torrentsHTML = `
             <div id="torrents">
                 <form id="form-btkitty" method="post" target="_blank" action="http://btkittyba.co/">
@@ -478,8 +490,8 @@ class MiniDriver {
                     <tr>
                         <td><strong>种子:</strong></td>
                         <td><a href="${sukebei}" target="_blank">sukebei</a></td>
-                        <td><a href="${btsow}" target="_blank">btsow</a></td>
-                        <td><a href="${belibrary}" target="_blank">belibrary</a></td>
+                        <td><a href="${btspread}" target="_blank">btspread</a></td>
+                        <td><a href="${javbus}" target="_blank">javbus</a></td>
                         <td><a href="${torrentKitty}" target="_blank">torrentKitty</a></td>
                         <td><a href="${tokyotosho}" target="_blank">tokyotosho</a></td>
                         <td><a id="btkitty" href="JavaScript:Void(0);" onclick="document.getElementById('form-btkitty').submit();">btkitty</a></td>
@@ -510,9 +522,9 @@ class MiniDriver {
         let loadMoreId = 'load_more_' + pageType;
         let urlPath = 'video' + pageType;
         let elementsId = 'video_' + pageType;
-        
+
         // Load more reviews
-        let request = {url: `http://www.javlibrary.com/cn/${urlPath}.php?v=${this.javVideoId}&mode=2&page=${page}`};
+        let request = {url: `${this.javUrl.origin}/cn/${urlPath}.php?v=${this.javVideoId}&mode=2&page=${page}`};
         let result = await xhrFetch(request).catch(err => {console.log(err); return;});
         let doc = parseHTMLText(result.responseText);
 
@@ -521,7 +533,7 @@ class MiniDriver {
         if (loadMoreDiv != null) {
             loadMoreDiv.parentNode.removeChild(loadMoreDiv);
         }
-        
+
         // Get comments/reviews in the next page
         let elements = doc.getElementById(elementsId);
         if (elements.getElementsByClassName('t').length == 0 || doc.getElementsByClassName('page_selector').length == 0) {
@@ -601,7 +613,7 @@ class MiniDriver {
                 }
             }
         });
-        
+
         // Remove the redirection
         Array.from(content.getElementsByTagName('a')).forEach(element => {
             let imgs = element.getElementsByTagName('img');
@@ -709,8 +721,8 @@ class MiniDriver {
             console.log(responses);
 
             let videoHtml = responses
-                                .filter(response => response != null 
-                                        && includesEditionNumber(response) 
+                                .filter(response => response != null
+                                        && includesEditionNumber(response)
                                         && !response.includes('//_sample.mp4'))
                                 .map(response => `<source src="${response}">`)
                                 .join('');
