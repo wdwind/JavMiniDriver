@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jav小司机
 // @namespace    wddd
-// @version      1.1.2
+// @version      1.1.3
 // @author       wddd
 // @license      MIT
 // @include      http*://*javlibrary.com/*
@@ -10,6 +10,8 @@
 // @description  Jav小司机。简单轻量速度快！
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
+// @grant        GM_setValue
+// @grant        GM_getValue
 // @homepage     https://github.com/wdwind/JavMiniDriver
 // @downloadURL  https://github.com/wdwind/JavMiniDriver/raw/master/JavMiniDriver.user.js
 // ==/UserScript==
@@ -19,6 +21,17 @@
 //  * https://greasyfork.org/zh-CN/scripts/37122
 
 // Change log
+// 1.1.3
+/*
+ * Issue: https://github.com/wdwind/JavMiniDriver/issues/1#issuecomment-521836751
+ *
+ * Update browser history when clicking "load more" button in video list page
+ * Store the configuration of whether to show the page selector in local storage instead of cookies
+ * Fix a screenshot bug to handle non-existing images gracefully
+ * Temporarily remove video from sod.co.jp since it requires a Referer in http request header
+ * ~~Add a iframe to bypass adult check and DDoS check of sod.co.jp~~
+ * Other technical refactoring
+*/
 // 1.1.2
 /*
  * Issue: https://greasyfork.org/zh-CN/forum/discussion/61213/x
@@ -55,13 +68,14 @@ function setCookie(cookieName, cookieValue, expireDays) {
     document.cookie = cookieName + "=" + cookieValue + ";" + expires + ";path=/";
 }
 
-function getCookie(cookieName) {
-    let value = "; " + document.cookie;
-    let parts = value.split("; " + cookieName + "=");
-    if (parts.length == 2) {
-        return parts.pop().split(";").shift();
-    }
-}
+// Not used
+// function getCookie(cookieName) {
+//     let value = "; " + document.cookie;
+//     let parts = value.split("; " + cookieName + "=");
+//     if (parts.length == 2) {
+//         return parts.pop().split(";").shift();
+//     }
+// }
 
 function insertAfter(newNode, referenceNode) {
     referenceNode.parentNode.insertBefore(newNode, referenceNode.nextSibling);
@@ -71,8 +85,10 @@ function insertBefore(newNode, referenceNode) {
     referenceNode.parentNode.insertBefore(newNode, referenceNode);
 }
 
-function removeElement(element) {
-    return element.parentNode.removeChild(element);
+function removeElementIfPresent(element) {
+    if (element) {
+        return element.parentNode.removeChild(element);
+    }
 }
 
 function parseHTMLText(text) {
@@ -199,10 +215,184 @@ function addStyle() {
             cursor: pointer;
             color: blue;
         }
+        .bottombanner2 {
+            display: none !important;
+        }
     `);
 
-    // left menu
-    if (window.location.href.includes('?v=')) {
+    // Homepage
+    if (!window.location.href.includes('.php')) {
+        GM_addStyle(`
+            .videothumblist {
+                height: 645px !important;
+            }
+        `);
+    }
+}
+
+// Thumbnail
+class MiniDriverThumbnail {
+
+    constructor() {
+        this.loadMoreDivId = 'load_next_page';
+        this.loadMoreButtonId = 'load_next_page_button';
+
+        let showPageSelector = GM_getValue('showPageSelector', 'none') != 'block' ? 'none' : 'block';
+        let pageSelector = document.getElementsByClassName('page_selector')[0];
+        if (pageSelector) {
+            pageSelector.style.display = showPageSelector;
+        }
+
+        let toggleMessage = GM_getValue('showPageSelector', 'none') != 'block' ? '显示页数' : '隐藏页数';
+        this.togglePageSelector = createElementFromHTML(
+            `<div id='togglePageSelector' class='toggle'>
+                ${toggleMessage}
+            </div>`);
+        this.togglePageSelector.addEventListener('click', () => this.toggle());
+    }
+
+    execute() {
+        if (window) {
+
+        }
+        let videos = document.getElementsByClassName('videos')[0];
+        document.getElementsByClassName('videothumblist')[0].innerHTML = `<div class="videothumblist">
+                                                                            <div class="videos"></div>
+                                                                        </div>`;
+        let pageSelector = document.getElementsByClassName('page_selector')[0];
+        let nextPage = document.getElementsByClassName('page next')[0];
+        this.updatePageContent(videos, pageSelector, nextPage);
+    }
+
+    updatePageContent(videos, pageSelector, nextPage) {
+        // Add videos to the page
+        let currentVideos = document.getElementsByClassName('videos')[0];
+        if (videos) {
+            Array.from(videos.children).forEach(video => {
+                currentVideos.appendChild(video);
+                this.updateVideoDetail(video);
+                this.updateVideoEvents(video);
+            });
+        }
+
+        // Remove current "load more" div
+        removeElementIfPresent(document.getElementById(this.loadMoreDivId));
+
+        // Replace page selector content
+        document.getElementsByClassName('page_selector')[0].innerHTML = pageSelector.innerHTML;
+
+        // Add "load more" div
+        let loadMoreDiv = createElementFromHTML(`<div id='${this.loadMoreDivId}' class='load_more'></div>`);
+        if (nextPage) {
+            let nextPageUrl = nextPage.href;
+            let loadMoreButton = getLoadMoreButton(this.loadMoreButtonId, async () => this.getNextPage(nextPageUrl));
+            loadMoreDiv.appendChild(loadMoreButton);
+            loadMoreDiv.appendChild(this.togglePageSelector);
+            document.getElementById('rightcolumn').appendChild(loadMoreDiv);
+        }
+    }
+
+    async updateVideoDetail(video) {
+        if (video.id.includes('vid_')) {
+            let request = {url: `/cn/?v=${video.id.substring(4)}`};
+            let result = await xhrFetch(request).catch(err => {console.log(err); return;});
+            let videoDetailsDoc = parseHTMLText(result.responseText);
+
+            // Video date
+            let videoDate = '';
+            if (videoDetailsDoc.getElementById('video_date')) {
+                videoDate = videoDetailsDoc.getElementById('video_date').getElementsByClassName('text')[0].innerText;
+            }
+
+            // Video score
+            let videoScore = '';
+            if (videoDetailsDoc.getElementById('video_review')) {
+                let videoScoreStr = videoDetailsDoc.getElementById('video_review').getElementsByClassName('score')[0].innerText;
+                videoScore = videoScoreStr.substring(1, videoScoreStr.length - 1);
+            }
+
+            // Video watched
+            let videoWatched = '0';
+            if (videoDetailsDoc.getElementById('watched')) {
+                videoWatched = videoDetailsDoc.getElementById('watched').getElementsByTagName('a')[0].innerText;
+            }
+
+            let videoDetailsHtml = `
+                <div class="thumbnailDetail">
+                    <span>${videoDate}</span>&nbsp;&nbsp;<span style='color:red;'>${videoScore}</span>
+                    <br/>
+                    <span>${videoWatched} 人看过</span>
+                </div>
+            `;
+            let videoDetails = createElementFromHTML(videoDetailsHtml);
+            video.insertBefore(videoDetails, video.getElementsByClassName('toolbar')[0]);
+        }
+    }
+
+    updateVideoEvents(video) {
+        if (video) {
+            // Prevent existing listeners https://stackoverflow.com/a/46986927/4214478
+            video.addEventListener('mouseout', (event) => {
+                event.stopImmediatePropagation();
+                video.getElementsByClassName('toolbar')[0].style.display = 'none';
+            }, true);
+            video.addEventListener('mouseover', (event) => {
+                event.stopImmediatePropagation();
+                video.getElementsByClassName('toolbar')[0].style.display = 'block';
+            }, true); 
+        }
+    }
+
+    async getNextPage(url) {
+        // Update page URL and history
+        history.pushState(history.state, window.document.title, url);
+
+        // Fetch next page
+        let result = await xhrFetch({url: url}).catch(err => {console.log(err); return;});
+        let nextPageDoc = parseHTMLText(result.responseText);
+
+        // Update page content
+        let videos = nextPageDoc.getElementsByClassName('videos')[0];
+        let pageSelector = nextPageDoc.getElementsByClassName('page_selector')[0];
+        let nextPage = nextPageDoc.getElementsByClassName('page next')[0];
+        this.updatePageContent(videos, pageSelector, nextPage);
+    }
+
+    toggle() {
+        let pageSelector = document.getElementsByClassName('page_selector')[0];
+        if (pageSelector.style.display === 'none') {
+            pageSelector.style.display = 'block';
+            this.togglePageSelector.innerText = '隐藏页数';
+            GM_setValue('showPageSelector', 'block');
+        } else {
+            pageSelector.style.display = 'none';
+            this.togglePageSelector.innerText = '显示页数';
+            GM_setValue('showPageSelector', 'none');
+        }
+    }
+}
+
+class MiniDriver {
+    
+    execute() {
+        let javUrl = new URL(window.location.href);
+        this.javVideoId = javUrl.searchParams.get('v');
+
+        // Video page
+        if (this.javVideoId != null) {
+            this.addStyle();
+            this.setEditionNumber();
+            this.updateTitle();
+            this.addScreenshot();
+            this.addTorrentLinks();
+            this.updateReviews();
+            this.updateComments();
+            this.getPreview();
+        }
+    }
+
+    addStyle() {
+        // left menu
         GM_addStyle(`
             #leftmenu {
                 display: none;
@@ -251,166 +441,6 @@ function addStyle() {
         `);
     }
 
-    // Homepage
-    if (!window.location.href.includes('.php')) {
-        GM_addStyle(`
-            .videothumblist {
-                height: 645px !important;
-            }
-        `);
-    }
-}
-
-// Thumbnail
-class MiniDriverThumbnail {
-
-    constructor() {
-        this.loadMoreDivId = 'load_next_page';
-        this.loadMoreButtonId = 'load_next_page_button';
-
-        let showPageSelector = getCookie('showPageSelector') != 'block' ? 'none' : 'block';
-        let pageSelector = document.getElementsByClassName('page_selector')[0];
-        if (pageSelector) {
-            pageSelector.style.display = showPageSelector;
-        }
-
-        let toggleMessage = getCookie('showPageSelector') != 'block' ? '显示页数' : '隐藏页数';
-        this.togglePageSelector = createElementFromHTML(
-            `<div id='togglePageSelector' class='toggle'>
-                ${toggleMessage}
-            </div>`);
-        this.togglePageSelector.addEventListener('click', () => this.toggle());
-
-        this.javUrl = new URL(window.location.href);
-    }
-
-    execute() {
-        this.updateVideoDetails(document);
-        this.updateNextPage();
-    }
-
-    updateVideoDetails(doc) {
-        let videos = doc.querySelectorAll('.videothumblist .videos .video');
-        Array.from(videos).forEach(async video => {
-            if (video.id.includes('vid_')) {
-                let request = {url: `${this.javUrl.origin}/cn/?v=${video.id.substring(4)}`};
-                let result = await xhrFetch(request).catch(err => {console.log(err); return;});
-                let videoDetailsDoc = parseHTMLText(result.responseText);
-
-                // Video date
-                let videoDate = '';
-                if (videoDetailsDoc.getElementById('video_date')) {
-                    videoDate = videoDetailsDoc.getElementById('video_date').getElementsByClassName('text')[0].innerText;
-                }
-
-                // Video score
-                let videoScore = '';
-                if (videoDetailsDoc.getElementById('video_review')) {
-                    let videoScoreStr = videoDetailsDoc.getElementById('video_review').getElementsByClassName('score')[0].innerText;
-                    videoScore = videoScoreStr.substring(1, videoScoreStr.length - 1);
-                }
-
-                // Video watched
-                let videoWatched = '0';
-                if (videoDetailsDoc.getElementById('watched')) {
-                    videoWatched = videoDetailsDoc.getElementById('watched').getElementsByTagName('a')[0].innerText;
-                }
-
-                let videoDetailsHtml = `
-                    <div class="thumbnailDetail">
-                        <span>${videoDate}</span>&nbsp;&nbsp;<span style='color:red;'>${videoScore}</span>
-                        <br/>
-                        <span>${videoWatched} 人看过</span>
-                    </div>
-                `;
-                let videoDetails = createElementFromHTML(videoDetailsHtml);
-                video.insertBefore(videoDetails, video.getElementsByClassName('toolbar')[0]);
-            }
-        });
-    }
-
-    async getNextPage(url) {
-        // Fetch next page
-        let result = await xhrFetch({url: url}).catch(err => {console.log(err); return;});
-        let nextPageDoc = parseHTMLText(result.responseText);
-        this.updateVideoDetails(nextPageDoc);
-
-        // Update current page
-        let videos = document.getElementsByClassName('videos');
-        let nextPageVideos = nextPageDoc.getElementsByClassName('videos');
-        if (nextPageVideos.length > 0) {
-            Array.from(nextPageVideos[0].children).forEach(video => {
-                videos[0].appendChild(video);
-            });
-        }
-
-        // Remove existing load more button
-        removeElement(document.getElementById(this.loadMoreButtonId));
-
-        // Replace page selector content
-        let pageSelector = document.getElementsByClassName('page_selector')[0];
-        pageSelector.innerHTML = nextPageDoc.getElementsByClassName('page_selector')[0].innerHTML;
-
-        // Add next page button
-        let nextPage = nextPageDoc.getElementsByClassName('page next');
-        if (nextPage.length > 0) {
-            let nextPageUrl = nextPage[0].href;
-            let loadMoreButton = getLoadMoreButton(this.loadMoreButtonId, async () => this.getNextPage(nextPageUrl));
-            document.getElementById(this.loadMoreDivId).prepend(loadMoreButton);
-        }
-    }
-
-    updateNextPage() {
-        let loadMoreDiv = createElementFromHTML(`<div id='${this.loadMoreDivId}' class='load_more'></div>`);
-
-        let nextPage = document.getElementsByClassName('page next');
-        if (nextPage.length > 0) {
-            let nextPageUrl = nextPage[0].href;
-            let loadMoreButton = getLoadMoreButton(this.loadMoreButtonId, async () => this.getNextPage(nextPageUrl));
-            loadMoreDiv.appendChild(loadMoreButton);
-            loadMoreDiv.appendChild(this.togglePageSelector);
-            document.getElementById('rightcolumn').appendChild(loadMoreDiv);
-        }
-    }
-
-    toggle() {
-        let pageSelector = document.getElementsByClassName('page_selector')[0];
-        if (pageSelector.style.display === 'none') {
-            pageSelector.style.display = 'block';
-            this.togglePageSelector.innerText = '隐藏页数';
-            setCookie('showPageSelector', 'block');
-        } else {
-            pageSelector.style.display = 'none';
-            this.togglePageSelector.innerText = '显示页数';
-            setCookie('showPageSelector', 'none');
-        }
-    }
-}
-
-class MiniDriver {
-
-    constructor() {
-        this.javUrl = new URL(window.location.href);
-    }
-
-    execute() {
-        if (!this.javUrl.pathname.includes('.php')) {
-            // Homepage or video page
-            this.javVideoId = this.javUrl.searchParams.get('v');
-
-            // Video page
-            if (this.javVideoId != null) {
-                this.setEditionNumber();
-                this.updateTitle();
-                this.addScreenshot();
-                this.addTorrentLinks();
-                this.updateReviews();
-                this.updateComments();
-                this.getPreview();
-            }
-        }
-    }
-
     setEditionNumber() {
         let edition = document.getElementById('video_id').getElementsByClassName('text')[0];
         this.editionNumber = edition.innerText;
@@ -423,7 +453,7 @@ class MiniDriver {
 
         // Add English title
         if (!window.location.href.includes('/en/')) {
-            let request = {url: `${this.javUrl.origin}/en/?v=${this.javVideoId}`};
+            let request = {url: `/en/?v=${this.javVideoId}`};
             let result = await xhrFetch(request).catch(err => {console.log(err); return;});
             let videoDetailsDoc = parseHTMLText(result.responseText);
             let englishTitle = videoDetailsDoc.getElementById('video_title')
@@ -447,26 +477,24 @@ class MiniDriver {
         let jbUrl = `http://img.japanese-bukkake.net/${videoDates[0]}/${videoDates[1]}/${this.editionNumber}_s.jpg`;
 
         for (let url of [javscreensUrl, jbUrl]) {
-            let img = await this.loadImg(url).catch(() => {return;});
-            if (img) {
-                if (img.naturalHeight < 200) {
-                    removeElement(img);
-                    continue;
-                }
+            let img = await this.loadImg(url).catch((img) => {return img;});
+            if (img && img.naturalHeight > 200) {
+                // Valid screenshot loaded, break the loop
                 break;
             }
+            removeElementIfPresent(img);
         }
     }
 
     loadImg(url) {
-        console.log('Get screenshot '+ url);
+        console.log('Get screenshot ' + url);
         return new Promise((resolve, reject) => {
             let img = createElementFromHTML(`<img src="${url}" class="screenshot" title="">`);
             insertBefore(img, document.getElementById('rightcolumn').getElementsByClassName('socialmedia')[0]);
             img.addEventListener('click', () => this.screenShotOnclick(img));
 
             img.onload = () => resolve(img);
-            img.onerror = reject;
+            img.onerror = () => reject(img);
         });
     }
 
@@ -524,7 +552,7 @@ class MiniDriver {
         let elementsId = 'video_' + pageType;
 
         // Load more reviews
-        let request = {url: `${this.javUrl.origin}/cn/${urlPath}.php?v=${this.javVideoId}&mode=2&page=${page}`};
+        let request = {url: `/cn/${urlPath}.php?v=${this.javVideoId}&mode=2&page=${page}`};
         let result = await xhrFetch(request).catch(err => {console.log(err); return;});
         let doc = parseHTMLText(result.responseText);
 
@@ -536,7 +564,7 @@ class MiniDriver {
 
         // Get comments/reviews in the next page
         let elements = doc.getElementById(elementsId);
-        if (elements.getElementsByClassName('t').length == 0 || doc.getElementsByClassName('page_selector').length == 0) {
+        if (!elements.getElementsByClassName('t')[0] || !doc.getElementsByClassName('page_selector')[0]) {
             return;
         }
 
@@ -557,8 +585,8 @@ class MiniDriver {
         });
 
         // Append load more if next page exists
-        let nextPage = doc.getElementsByClassName('page next');
-        if (nextPage.length > 0) {
+        let nextPage = doc.getElementsByClassName('page next')[0];
+        if (nextPage) {
             let loadMoreButton = getLoadMoreButton(loadMoreId, async () => this.getNextPage(page + 1, pageType));
             insertAfter(loadMoreButton, currentElements);
         }
@@ -681,15 +709,12 @@ class MiniDriver {
             }
         }
 
-        let sod = async () => {
-            // Adult check
-            await gmFetch({url: `https://ec.sod.co.jp/prime/_ontime.php`});
-
-            let request = {url: `https://ec.sod.co.jp/prime/videos/sample.php?id=${this.editionNumber}`};
-            let result = await gmFetch(request).catch(err => {console.log(err); return;});
-            let doc = parseHTMLText(result.responseText);
-            return doc.getElementsByTagName('source')[0].src;
-        }
+        // let sod = async () => {
+        //     let request = {url: `https://ec.sod.co.jp/prime/videos/sample.php?id=${this.editionNumber}`};
+        //     let result = await gmFetch(request).catch(err => {console.log(err); return;});
+        //     let doc = parseHTMLText(result.responseText);
+        //     return doc.getElementsByTagName('source')[0].src;
+        // }
 
         let jav321 = async () => {
             let request = {
@@ -714,9 +739,18 @@ class MiniDriver {
 
             return;
         }
+        
+        // // Prepare for sod adult check and DDoS check
+        // // iframe vs. embed vs. object https://stackoverflow.com/a/21115112/4214478
+        // // ifrmae sandbox https://www.w3schools.com/tags/att_iframe_sandbox.asp
+        // insertBefore(
+        //     createElementFromHTML(`<iframe src="https://ec.sod.co.jp/prime/_ontime.php" 
+        //                                 style="display:none;" referrerpolicy="no-referrer" sandbox>
+        //                            </iframe>`), 
+        //     document.getElementById('topmenu'));
 
         Promise.all(
-            [jav321, r18, dmm, sod, kv].map(source => source().catch(err => {console.log(err); return;}))
+            [jav321, r18, dmm, kv].map(source => source().catch(err => {console.log(err); return;}))
         ).then(responses => {
             console.log(responses);
 
@@ -745,6 +779,9 @@ setCookie('over18', 18);
 
 // Style change
 addStyle();
-
-new MiniDriver().execute();
-new MiniDriverThumbnail().execute();
+if (!window.location.href.includes('.php')
+        && (window.location.href.includes('?v=') || window.location.href.includes('&v='))) {
+    new MiniDriver().execute();
+} else {
+    new MiniDriverThumbnail().execute();
+}
