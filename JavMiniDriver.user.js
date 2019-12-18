@@ -7,6 +7,8 @@
 // @include      http*://*javlibrary.com/*
 // @include      http*://*javlib.com/*
 // @include      http*://*m34z.com/*
+// @include      http*://*j41g.com/*
+// @include      http*://*h28o.com/*
 // @description  Jav小司机。简单轻量速度快！
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
@@ -21,8 +23,14 @@
 //  * https://greasyfork.org/zh-CN/scripts/37122
 
 // Change log
+// 1.1.4
+/** 
+ * Add support for j41g.com and h28o.com
+ * Block ad
+ * Only load the full screenshot until user clicks the thumbnail
+*/
 // 1.1.3
-/*
+/** 
  * Issue: https://github.com/wdwind/JavMiniDriver/issues/1#issuecomment-521836751
  *
  * Update browser history when clicking "load more" button in video list page
@@ -33,7 +41,7 @@
  * Other technical refactoring
 */
 // 1.1.2
-/*
+/** 
  * Issue: https://greasyfork.org/zh-CN/forum/discussion/61213/x
  *
  * Minor updates
@@ -41,7 +49,7 @@
  * Add support for javlib.com and m34z.com
 */
 // 1.1.1
-/*
+/** 
  * Issue: https://github.com/wdwind/JavMiniDriver/issues/1
  *
  * Change thumbnail font
@@ -51,7 +59,7 @@
  * Add more data sources for the screenshots in reviews/comments
 */
 // 1.1.0
-/*
+/** 
  * Simplify code by merging the functions for get more comments/reviews
  * Process screenshots in reviews/comments
    * Remove redirection
@@ -463,12 +471,29 @@ class MiniDriver {
         }
     }
 
+    scrollToTop(element) {
+        let distanceToTop = element.getBoundingClientRect().top;
+        if (distanceToTop < 0) {
+
+            window.scrollBy(0, distanceToTop);
+        }
+    }
+
     screenShotOnclick(element) {
         if (element.style['max-width'] != '100%') {
             element.style['max-width'] = '100%';
         } else {
             element.style['max-width'] = '25%';
         }
+        this.scrollToTop(element);
+    }
+
+    lazyScreenShotOnclick(element) {
+        let currentSrc = element.src;
+        element.src = element.dataset.src;
+        element.dataset.src = currentSrc;
+        element.style['max-width'] = '100%';
+        this.scrollToTop(element);
     }
 
     async addScreenshot() {
@@ -500,13 +525,17 @@ class MiniDriver {
 
     addTorrentLinks() {
         let sukebei = `https://sukebei.nyaa.si/?f=0&c=0_0&q=${this.editionNumber}`;
-        let btspread = `https://btspread.com/search/${this.editionNumber}`;
+        let btsow = `https://btos.pw/search/${this.editionNumber}`;
         let javbus = `https://www.javbus.com/${this.editionNumber}`;
         let torrentKitty = `https://www.torrentkitty.tv/search/${this.editionNumber}`;
         let tokyotosho = `https://www.tokyotosho.info/search.php?terms=${this.editionNumber}`;
+        let biedian = `https://biedian.me/search?source=%E7%A7%8D%E5%AD%90%E6%90%9C&s=time&p=1&k=${this.editionNumber}`;
+        let btDigg = `http://btdig.com/search?q=${this.editionNumber}`;
+        let idope = `https://idope.se/torrent-list/${this.editionNumber}/`;
 
         let torrentsHTML = `
             <div id="torrents">
+                <!--
                 <form id="form-btkitty" method="post" target="_blank" action="http://btkittyba.co/">
                     <input type="hidden" name="keyword" value="${this.editionNumber}">
                     <input type="hidden" name="hidden" value="true">
@@ -514,16 +543,23 @@ class MiniDriver {
                 <form id="form-btdiggs" method="post" target="_blank" action="http://btdiggba.me/">
                     <input type="hidden" name="keyword" value="${this.editionNumber}">
                 </form>
+                -->
                 <table>
                     <tr>
                         <td><strong>种子:</strong></td>
                         <td><a href="${sukebei}" target="_blank">sukebei</a></td>
-                        <td><a href="${btspread}" target="_blank">btspread</a></td>
+                        <td><a href="${btsow}" target="_blank">btsow</a></td>
                         <td><a href="${javbus}" target="_blank">javbus</a></td>
                         <td><a href="${torrentKitty}" target="_blank">torrentKitty</a></td>
                         <td><a href="${tokyotosho}" target="_blank">tokyotosho</a></td>
+                        <td><a href="${biedian}" target="_blank">biedian</a></td>
+                        <td><a href="${btDigg}" target="_blank">btDigg</a></td>
+                        <td><a href="${idope}" target="_blank">idope</a></td>
+                        <!--
                         <td><a id="btkitty" href="JavaScript:Void(0);" onclick="document.getElementById('form-btkitty').submit();">btkitty</a></td>
                         <td><a id="btdiggs" href="JavaScript:Void(0);" onclick="document.getElementById('form-btdiggs').submit();">btdiggs</a></td>
+                        -->
+
                     </tr>
                 </table>
             </div>
@@ -632,9 +668,14 @@ class MiniDriver {
             if (img.src != null) {
                 for (let source of sources) {
                     if (img.src.match(source.regex)) {
-                        let imgUrl = source.process(img.src);
-                        let screenshot = createElementFromHTML(`<img class="screenshot processed" referrerpolicy="no-referrer" src="${imgUrl}">`);
-                        screenshot.addEventListener('click', () => this.screenShotOnclick(screenshot));
+                        let rawImgUrl = source.process(img.src);
+                        let screenshot = createElementFromHTML(`
+                            <img class="screenshot processed" 
+                                referrerpolicy="no-referrer" 
+                                src="${img.src}" 
+                                data-src="${rawImgUrl}">
+                        `);
+                        screenshot.addEventListener('click', () => this.lazyScreenShotOnclick(screenshot));
                         img.replaceWith(screenshot);
                         break;
                     }
@@ -763,7 +804,7 @@ class MiniDriver {
             if (videoHtml != '') {
                 let previewHtml = `
                     <div id="preview">
-                        <video controls>
+                        <video controls onloadstart="this.volume=0.5">
                             ${videoHtml}
                         </video>
                     </div>
@@ -773,6 +814,32 @@ class MiniDriver {
         });
     }
 }
+
+function blockAds() {
+    // Remove ad script if possible
+    let ad = window.document.querySelector('script[src*="yuanmengbi"]');
+    let adId = (ad && ad.src) ? (new URL(ad.src)).searchParams.get('id') : '291';
+    removeElementIfPresent(ad);
+
+    // Add cookie to bypass ad
+    setCookie(adId, "1");
+
+    // Not open ad url
+    // https://stackoverflow.com/a/9172526
+    // https://stackoverflow.com/a/4658196
+    let scope = (typeof unsafeWindow === "undefined") ? window : unsafeWindow;
+    scope.open = function(open) {
+        return function(url, name, features) {
+            if (url.includes('yuanmengbi')) {
+                return;
+            }
+            return open.call(scope, url, name, features);
+        };
+    }(scope.open);
+}
+
+// Block ad
+blockAds();
 
 // Adult check
 setCookie('over18', 18);
