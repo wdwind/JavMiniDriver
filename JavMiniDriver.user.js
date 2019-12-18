@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jav小司机
 // @namespace    wddd
-// @version      1.1.3
+// @version      1.1.4
 // @author       wddd
 // @license      MIT
 // @include      http*://*javlibrary.com/*
