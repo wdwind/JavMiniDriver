@@ -805,6 +805,7 @@ class MiniDriver {
                 let previewHtml = `
                     <div id="preview">
                         <video controls onloadstart="this.volume=0.5">
+                            <meta name="referrer" content="no-referrer">
                             ${videoHtml}
                         </video>
                     </div>
