@@ -14,6 +14,7 @@
 // @grant        GM_addStyle
 // @grant        GM_setValue
 // @grant        GM_getValue
+// @grant        GM_log
 // @homepage     https://github.com/wdwind/JavMiniDriver
 // @downloadURL  https://github.com/wdwind/JavMiniDriver/raw/master/JavMiniDriver.user.js
 // ==/UserScript==
@@ -303,7 +304,7 @@ class MiniDriverThumbnail {
     async updateVideoDetail(video) {
         if (video.id.includes('vid_')) {
             let request = {url: `/cn/?v=${video.id.substring(4)}`};
-            let result = await xhrFetch(request).catch(err => {console.log(err); return;});
+            let result = await xhrFetch(request).catch(err => {GM_log(err); return;});
             let videoDetailsDoc = parseHTMLText(result.responseText);
 
             // Video date
@@ -356,7 +357,7 @@ class MiniDriverThumbnail {
         history.pushState(history.state, window.document.title, url);
 
         // Fetch next page
-        let result = await xhrFetch({url: url}).catch(err => {console.log(err); return;});
+        let result = await xhrFetch({url: url}).catch(err => {GM_log(err); return;});
         let nextPageDoc = parseHTMLText(result.responseText);
 
         // Update page content
@@ -462,7 +463,7 @@ class MiniDriver {
         // Add English title
         if (!window.location.href.includes('/en/')) {
             let request = {url: `/en/?v=${this.javVideoId}`};
-            let result = await xhrFetch(request).catch(err => {console.log(err); return;});
+            let result = await xhrFetch(request).catch(err => {GM_log(err); return;});
             let videoDetailsDoc = parseHTMLText(result.responseText);
             let englishTitle = videoDetailsDoc.getElementById('video_title')
                                     .getElementsByClassName('post-title')[0]
@@ -500,10 +501,11 @@ class MiniDriver {
         let javscreensUrl = `http://javscreens.com/images/${this.editionNumber}.jpg`;
         let videoDates = document.getElementById('video_date').getElementsByClassName('text')[0].innerText.split('-');
         let jbUrl = `http://img.japanese-bukkake.net/${videoDates[0]}/${videoDates[1]}/${this.editionNumber}_s.jpg`;
-
         for (let url of [javscreensUrl, jbUrl]) {
             let img = await this.loadImg(url).catch((img) => {return img;});
             if (img && img.naturalHeight > 200) {
+                insertBefore(img, document.getElementById('rightcolumn').getElementsByClassName('socialmedia')[0]);
+                img.addEventListener('click', () => this.screenShotOnclick(img));
                 // Valid screenshot loaded, break the loop
                 break;
             }
@@ -512,14 +514,26 @@ class MiniDriver {
     }
 
     loadImg(url) {
-        console.log('Get screenshot ' + url);
-        return new Promise((resolve, reject) => {
-            let img = createElementFromHTML(`<img src="${url}" class="screenshot" title="">`);
-            insertBefore(img, document.getElementById('rightcolumn').getElementsByClassName('socialmedia')[0]);
-            img.addEventListener('click', () => this.screenShotOnclick(img));
-
-            img.onload = () => resolve(img);
-            img.onerror = () => reject(img);
+        return new Promise(function (resolve, reject) {
+            GM_xmlhttpRequest({
+                method: 'GET',
+                responseType: 'blob',
+                url: url,
+                onload: (result) => {
+                    if (result.status >= 200 && result.status < 300) {
+                        let img = createElementFromHTML(`<img class="screenshot" title="">`);
+                        insertBefore(img, document.getElementById('rightcolumn').getElementsByClassName('socialmedia')[0]);
+                        img.src = window.URL.createObjectURL(result.response);
+                        
+                        img.onload = () => resolve(img);
+                        img.onerror = () => reject(img);
+                    } else {
+                        reject();
+                    }
+                },
+                onerror: reject,
+                ontimeout: reject,
+            });
         });
     }
 
@@ -589,7 +603,7 @@ class MiniDriver {
 
         // Load more reviews
         let request = {url: `/cn/${urlPath}.php?v=${this.javVideoId}&mode=2&page=${page}`};
-        let result = await xhrFetch(request).catch(err => {console.log(err); return;});
+        let result = await xhrFetch(request).catch(err => {GM_log(err); return;});
         let doc = parseHTMLText(result.responseText);
 
         // Remove the load more div in current page
@@ -701,9 +715,35 @@ class MiniDriver {
                     && str.includes(this.editionNumber.toLowerCase().split('-')[1]);
         }
 
+        let nativeDmm = async() => {
+            let dmmCid = document.getElementsByClassName('btn_videoplayer')[0].getAttribute('attr-data');
+            
+            // let request = {url: `https://www.dmm.co.jp/service/digitalapi/-/html5_player/=/cid=${dmmCid}/mtype=AhRVShI_/service=litevideo/mode=/width=560/height=360/`};
+            let request = {url: `https://www.dmm.co.jp/service/-/html5_player/=/cid=${dmmCid}/mtype=AhRVShI_/service=mono/floor=dvd/mode=/`}
+
+            let result = await gmFetch(request).catch(err => {GM_log(err); return;});
+            let doc = parseHTMLText(result.responseText);
+
+            // Very hacky... Didn't find a way to parse the HTML with JS.
+            for (let script of doc.getElementsByTagName('script')) {
+                if (script.innerText != null && script.innerText.includes('.mp4')) {
+                    for (let line of script.innerText.split('\n')) {
+                        if (line.includes('.mp4')) {
+                            line = line.substring(line.indexOf('{'), line.lastIndexOf(';'));
+                            let videoSrc = JSON.parse(line).src;
+                            if (!videoSrc.startsWith('http')) {
+                                videoSrc = 'http:' + videoSrc;
+                            }
+                            return videoSrc;
+                        }
+                    }
+                }
+            }
+        }
+
         let r18 = async () => {
             let request = {url: `https://www.r18.com/common/search/order=match/searchword=${this.editionNumber}/`};
-            let result = await gmFetch(request).catch(err => {console.log(err); return;});
+            let result = await gmFetch(request).catch(err => {GM_log(err); return;});
             let video_tag = parseHTMLText(result.responseText).querySelector('.js-view-sample');
             let src = ['high', 'med', 'low']
                             .map(i => video_tag.getAttribute('data-video-' + i))
@@ -714,7 +754,7 @@ class MiniDriver {
         let dmm = async () => {
             // Find dmm cid
             let bingRequest = {url: `https://www.bing.com/search?q=${this.editionNumber.toLowerCase()}+site%3awww.dmm.co.jp`}
-            let bingResult = await gmFetch(bingRequest).catch(err => {console.log(err); return;});
+            let bingResult = await gmFetch(bingRequest).catch(err => {GM_log(err); return;});
             let bingDoc = parseHTMLText(bingResult.responseText);
             let pattern = /(cid=[\w]+|pid=[\w]+)/g;
             let dmmCid = '';
@@ -729,16 +769,18 @@ class MiniDriver {
                 return;
             }
 
-            let request = {url: `https://www.dmm.co.jp/service/digitalapi/-/html5_player/=/cid=${dmmCid}/mtype=AhRVShI_/service=litevideo/mode=/width=560/height=360/`};
-            let result = await gmFetch(request).catch(err => {console.log(err); return;});
+            // let request = {url: `https://www.dmm.co.jp/service/digitalapi/-/html5_player/=/cid=${dmmCid}/mtype=AhRVShI_/service=litevideo/mode=/width=560/height=360/`};
+            let request = {url: `https://www.dmm.co.jp/service/-/html5_player/=/cid=${dmmCid}/mtype=AhRVShI_/service=mono/floor=dvd/mode=/`}
+
+            let result = await gmFetch(request).catch(err => {GM_log(err); return;});
             let doc = parseHTMLText(result.responseText);
 
             // Very hacky... Didn't find a way to parse the HTML with JS.
             for (let script of doc.getElementsByTagName('script')) {
                 if (script.innerText != null && script.innerText.includes('.mp4')) {
                     for (let line of script.innerText.split('\n')) {
-                        if (line.includes('var params')) {
-                            line = line.replace('var params =', '').replace(';', '');
+                        if (line.includes('.mp4')) {
+                            line = line.substring(line.indexOf('{'), line.lastIndexOf(';'));
                             let videoSrc = JSON.parse(line).src;
                             if (!videoSrc.startsWith('http')) {
                                 videoSrc = 'http:' + videoSrc;
@@ -752,26 +794,27 @@ class MiniDriver {
 
         // let sod = async () => {
         //     let request = {url: `https://ec.sod.co.jp/prime/videos/sample.php?id=${this.editionNumber}`};
-        //     let result = await gmFetch(request).catch(err => {console.log(err); return;});
+        //     let result = await gmFetch(request).catch(err => {GM_log(err); return;});
         //     let doc = parseHTMLText(result.responseText);
         //     return doc.getElementsByTagName('source')[0].src;
         // }
 
-        let jav321 = async () => {
-            let request = {
-                url: `https://www.jav321.com/search`,
-                method: 'POST',
-                data: `sn=${this.editionNumber}`,
-                headers: {
-                    referer: 'https://www.jav321.com/',
-                    'content-type': 'application/x-www-form-urlencoded',
-                },
-            };
+        // Site closed?
+        // let jav321 = async () => {
+        //     let request = {
+        //         url: `https://www.jav321.com/search`,
+        //         method: 'POST',
+        //         data: `sn=${this.editionNumber}`,
+        //         headers: {
+        //             referer: 'https://www.jav321.com/',
+        //             'content-type': 'application/x-www-form-urlencoded',
+        //         },
+        //     };
 
-            let result = await gmFetch(request).catch(err => {console.log(err); return;});
-            let doc = parseHTMLText(result.responseText);
-            return doc.getElementsByTagName('source')[0].src;
-        }
+        //     let result = await gmFetch(request).catch(err => {GM_log(err); return;});
+        //     let doc = parseHTMLText(result.responseText);
+        //     return doc.getElementsByTagName('source')[0].src;
+        // }
 
         let kv = async () => {
             if (this.editionNumber.includes('KV-')) {
@@ -790,10 +833,11 @@ class MiniDriver {
         //                            </iframe>`), 
         //     document.getElementById('topmenu'));
 
+        let previewSearchSources = document.getElementsByClassName('btn_videoplayer').length > 0 ? [nativeDmm] : [r18, dmm, kv];
         Promise.all(
-            [jav321, r18, dmm, kv].map(source => source().catch(err => {console.log(err); return;}))
+            previewSearchSources.map(source => source().catch(err => {GM_log(err); return;}))
         ).then(responses => {
-            console.log(responses);
+            GM_log(responses);
 
             let videoHtml = responses
                                 .filter(response => response != null
