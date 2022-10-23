@@ -660,48 +660,63 @@ class MiniDriver {
             {regex: /imgspice/, process: (input) => input.replace(/_s|_t/, '')},
             {regex: /t[\d]+\.pixhost/, process: (input) => input.replace(/t([\d]+\.)/, 'img$1').replace('/thumbs/', '/images/')},
             {regex: /img[\d]+\.pixhost/, process: (input) => input},
-            {regex: /imagetwist/, process: (input) => input.replace('/th/', '/i/')},
-            {regex: /oloadcdn/, process: (input) => input},
-            {regex: /subyshare/, process: (input) => input},
-            {regex: /verystream/, process: (input) => input},
+            {regex: /oloadcdn|subyshare|verystream|photosex|sehuatuchuang|900file|avcensdownload|ekladata|japanese\-bukkake/, process: (input) => input},
             {regex: /iceimg/, process: (input) => input.replace('/ssd/small/', '/uploads3/pixsense/big/').replace('/small-', '/')},
             {regex: /imgfrost/, process: (input) => input.replace('/small/small_', '/big/')},
-            {regex: /japanese\-bukkake/, process: (input) => input},
             {regex: /picz\.in\.th/, process: (input) => input.replace('.md', '')},
-            {regex: /photosex/, process: (input) => input},
             {regex: /imgtaxi/, process: (input) => input.replace('/small/', '/big/').replace('/small-medium/', '/big/')},
             {regex: /imgdrive/, process: (input) => input.replace('/small/', '/big/').replace('/small-medium/', '/big/')},
-            {regex: /sehuatuchuang/, process: (input) => input},
-            {regex: /900file/, process: (input) => input},
-            {regex: /avcensdownload/, process: (input) => input},
             {regex: /filesor/, process: (input) => input.replace('_s', '')},
+            {regex: /pics\.dmm\.co\.jp/, process: (input) => input.replace('-', 'jp-')},
+            {regex: /imagehaha|imagetwist/, process: (input) => input.replace('/th/', '/i/')},
+            {regex: /3xplanetimg/, process: (input) => input.replace('/s200/', '/s0/')},
+            {regex: /pics4you|silverpic|imgsto|picdollar|imagebam|premalo/, process: 
+                async (input, parent) => {
+                    let url = new URL(parent.href).searchParams.get('url');
+                    let imgId = url.split('/')[3];
+                    let request = {
+                        url: url, 
+                        method: 'POST', 
+                        data: `op=view&id=${imgId}&pre=1&next=Continue+to+image...`,
+                        headers: {
+                            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+                            'accept-encoding': 'gzip, deflate, br',
+                            'cache-control': 'max-age=0',
+                            'content-type': 'application/x-www-form-urlencoded',
+                            'cookie': `file_code=${imgId}; lang=english; fcode=${imgId}`,
+                            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 Safari/537.36',
+                            'referer': url,
+                            'upgrade-insecure-requests': 1,
+                        },
+                    };
+                    let result = await gmFetch(request).catch(err => {GM_log(err); return;});;
+                    let doc = parseHTMLText(result.responseText);
+                    let srcUrl = doc.getElementsByClassName('pic')[0].src;
+                    // GM_log(srcUrl);
+                    return srcUrl;
+                }
+            },
         ];
 
         // Get full img url
-        Array.from(content.getElementsByTagName('img')).forEach(img => {
+        Array.from(content.getElementsByTagName('img')).forEach(async img => {
             if (img.src != null) {
+                let parent = img.parentNode;
                 for (let source of sources) {
                     if (img.src.match(source.regex)) {
-                        let rawImgUrl = source.process(img.src);
+                        let rawImgUrl = await Promise.resolve(source.process(img.src, img.parentNode));
                         let screenshot = createElementFromHTML(`
                             <img class="screenshot processed" 
                                 referrerpolicy="no-referrer" 
                                 src="${img.src}" 
-                                data-src="${rawImgUrl}">
+                                data-src="${rawImgUrl}" 
+                                style="border: 1px solid #ff9900;">
                         `);
                         screenshot.addEventListener('click', () => this.lazyScreenShotOnclick(screenshot));
-                        img.replaceWith(screenshot);
+                        parent.replaceWith(screenshot);
                         break;
                     }
                 }
-            }
-        });
-
-        // Remove the redirection
-        Array.from(content.getElementsByTagName('a')).forEach(element => {
-            let imgs = element.getElementsByTagName('img');
-            if (imgs.length == 1 && imgs[0].className.includes('processed')) {
-                element.replaceWith(imgs[0]);
             }
         });
 
