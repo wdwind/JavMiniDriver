@@ -704,7 +704,7 @@ class MiniDriver {
                 let parent = img.parentNode;
                 for (let source of sources) {
                     if (img.src.match(source.regex)) {
-                        let rawImgUrl = await Promise.resolve(source.process(img.src, img.parentNode));
+                        let rawImgUrl = await source.process(img.src, img.parentNode);
                         let screenshot = createElementFromHTML(`
                             <img class="screenshot processed" 
                                 referrerpolicy="no-referrer" 
