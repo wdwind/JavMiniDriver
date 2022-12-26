@@ -118,13 +118,38 @@ function createElementFromHTML(html) {
     return template.content.firstChild;
 }
 
-function getLoadMoreButton(buttonId, callback) {
+function getLoadMoreButton(buttonId, pageSelectorId, callback) {
     let loadMoreButton = createElementFromHTML('<input type="button" class="largebutton" value="加载更多 &or;">');
     loadMoreButton.addEventListener('click', callback);
-
     buttonId = (buttonId != null) ? buttonId : 'load_more';
+
     let loadMoreDiv = createElementFromHTML(`<div id="${buttonId}" class="load_more"></div>`);
     loadMoreDiv.appendChild(loadMoreButton);
+
+    if (document.getElementById(pageSelectorId) != null) {
+        let toggle = (togglePageSelector) => {
+            let pageSelector = document.getElementById(pageSelectorId);
+            if (pageSelector.style.display === 'none') {
+                pageSelector.style.display = 'block';
+                togglePageSelector.innerText = '隐藏页数';
+                GM_setValue(pageSelectorId, 'block');
+            } else {
+                pageSelector.style.display = 'none';
+                togglePageSelector.innerText = '显示页数';
+                GM_setValue(pageSelectorId, 'none');
+            }
+        };
+        
+        let toggleMessage = GM_getValue('showPageSelector', 'none') != 'block' ? '显示页数' : '隐藏页数';
+        let togglePageSelector = createElementFromHTML(
+            `<div id='togglePageSelector' class='toggle'>
+                ${toggleMessage}
+            </div>`);
+        togglePageSelector.addEventListener('click', () => toggle(togglePageSelector));
+
+        loadMoreDiv.appendChild(togglePageSelector);
+    }
+    
     return loadMoreDiv;
 }
 
@@ -202,7 +227,7 @@ function addStyle() {
             color: #666666;
         }
         .page_selector {
-            display: none;
+            display: block;
             margin-bottom: 15px;
         }
         .load_more {
@@ -242,28 +267,7 @@ function addStyle() {
 // Thumbnail
 class MiniDriverThumbnail {
 
-    constructor() {
-        this.loadMoreDivId = 'load_next_page';
-        this.loadMoreButtonId = 'load_next_page_button';
-
-        let showPageSelector = GM_getValue('showPageSelector', 'none') != 'block' ? 'none' : 'block';
-        let pageSelector = document.getElementsByClassName('page_selector')[0];
-        if (pageSelector) {
-            pageSelector.style.display = showPageSelector;
-        }
-
-        let toggleMessage = GM_getValue('showPageSelector', 'none') != 'block' ? '显示页数' : '隐藏页数';
-        this.togglePageSelector = createElementFromHTML(
-            `<div id='togglePageSelector' class='toggle'>
-                ${toggleMessage}
-            </div>`);
-        this.togglePageSelector.addEventListener('click', () => this.toggle());
-    }
-
     execute() {
-        if (window) {
-
-        }
         let videos = document.getElementsByClassName('videos')[0];
         document.getElementsByClassName('videothumblist')[0].innerHTML = `<div class="videothumblist">
                                                                             <div class="videos"></div>
@@ -274,6 +278,9 @@ class MiniDriverThumbnail {
     }
 
     updatePageContent(videos, pageSelector, nextPage) {
+        let loadMoreDivId = 'load_next_page';
+        let loadMoreButtonId = 'load_next_page_button';
+
         // Add videos to the page
         let currentVideos = document.getElementsByClassName('videos')[0];
         if (videos) {
@@ -285,18 +292,19 @@ class MiniDriverThumbnail {
         }
 
         // Remove current "load more" div
-        removeElementIfPresent(document.getElementById(this.loadMoreDivId));
+        removeElementIfPresent(document.getElementById(loadMoreDivId));
 
         // Replace page selector content
+        let pageSelectorId = 'pageSelector' + Math.random();
         document.getElementsByClassName('page_selector')[0].innerHTML = pageSelector.innerHTML;
+        document.getElementsByClassName('page_selector')[0].id = pageSelectorId;
 
         // Add "load more" div
-        let loadMoreDiv = createElementFromHTML(`<div id='${this.loadMoreDivId}' class='load_more'></div>`);
+        let loadMoreDiv = createElementFromHTML(`<div id='${loadMoreDivId}' class='load_more'></div>`);
         if (nextPage) {
             let nextPageUrl = nextPage.href;
-            let loadMoreButton = getLoadMoreButton(this.loadMoreButtonId, async () => this.getNextPage(nextPageUrl));
+            let loadMoreButton = getLoadMoreButton(loadMoreButtonId, pageSelectorId, async () => this.getNextPage(nextPageUrl));
             loadMoreDiv.appendChild(loadMoreButton);
-            loadMoreDiv.appendChild(this.togglePageSelector);
             document.getElementById('rightcolumn').appendChild(loadMoreDiv);
         }
     }
@@ -365,19 +373,6 @@ class MiniDriverThumbnail {
         let pageSelector = nextPageDoc.getElementsByClassName('page_selector')[0];
         let nextPage = nextPageDoc.getElementsByClassName('page next')[0];
         this.updatePageContent(videos, pageSelector, nextPage);
-    }
-
-    toggle() {
-        let pageSelector = document.getElementsByClassName('page_selector')[0];
-        if (pageSelector.style.display === 'none') {
-            pageSelector.style.display = 'block';
-            this.togglePageSelector.innerText = '隐藏页数';
-            GM_setValue('showPageSelector', 'block');
-        } else {
-            pageSelector.style.display = 'none';
-            this.togglePageSelector.innerText = '显示页数';
-            GM_setValue('showPageSelector', 'none');
-        }
     }
 }
 
@@ -598,6 +593,7 @@ class MiniDriver {
 
     async getNextPage(page, pageType) {
         let loadMoreId = 'load_more_' + pageType;
+        let pageSelectorId = 'page_selector_' + pageType;
         let urlPath = 'video' + pageType;
         let elementsId = 'video_' + pageType;
 
@@ -606,10 +602,14 @@ class MiniDriver {
         let result = await xhrFetch(request).catch(err => {GM_log(err); return;});
         let doc = parseHTMLText(result.responseText);
 
-        // Remove the load more div in current page
-        let loadMoreDiv = document.getElementById(loadMoreId);
-        if (loadMoreDiv != null) {
-            loadMoreDiv.parentNode.removeChild(loadMoreDiv);
+        // Remove the load more div and page selector div in current page
+        let oldLoadMoreDiv = document.getElementById(loadMoreId);
+        if (oldLoadMoreDiv != null) {
+            oldLoadMoreDiv.parentNode.removeChild(oldLoadMoreDiv);
+        }
+        let oldPageSelectorDiv = document.getElementById(pageSelectorId);
+        if (oldPageSelectorDiv != null) {
+            oldPageSelectorDiv.parentNode.removeChild(oldPageSelectorDiv);
         }
 
         // Get comments/reviews in the next page
@@ -634,11 +634,27 @@ class MiniDriver {
             }
         });
 
+        // Append page selector
+        let showPageSelector = GM_getValue('showPageSelector', 'none') != 'block' ? 'none' : 'block';
+        let pageSelector = doc.getElementsByClassName('page_selector')[0];
+        if (pageSelector) {
+            pageSelector.style.display = showPageSelector;
+            pageSelector.id = pageSelectorId;
+            let as = pageSelector.getElementsByTagName('a');
+            for (let a of as) {
+                let nextPage = (new URL(a.href)).searchParams.get('page');
+                a.removeAttribute('href');
+                a.style.cursor = 'pointer';
+                a.addEventListener('click', async () => this.getNextPage(nextPage ? parseInt(nextPage) : 1, pageType));
+            }
+            insertAfter(pageSelector, currentElements);
+        }
+        
         // Append load more if next page exists
-        let nextPage = doc.getElementsByClassName('page next')[0];
-        if (nextPage) {
-            let loadMoreButton = getLoadMoreButton(loadMoreId, async () => this.getNextPage(page + 1, pageType));
-            insertAfter(loadMoreButton, currentElements);
+        let nextPage = pageSelector.getElementsByClassName('page next');
+        if (nextPage[0]) {
+            let loadMoreButton = getLoadMoreButton(loadMoreId, pageSelectorId, async () => this.getNextPage(page + 1, pageType));
+            insertAfter(loadMoreButton, (pageSelector) ? pageSelector : currentElements);
         }
     }
 
