@@ -145,7 +145,7 @@ function getLoadMoreButton(buttonId, pageSelectorId, callback) {
             }
         };
         
-        let toggleMessage = GM_getValue('showPageSelector', 'none') != 'block' ? '显示页数' : '隐藏页数';
+        let toggleMessage = GM_getValue(pageSelectorId, 'none') != 'block' ? '显示页数' : '隐藏页数';
         let togglePageSelector = createElementFromHTML(
             `<div id='togglePageSelector' class='toggle'>
                 ${toggleMessage}
@@ -413,9 +413,11 @@ class MiniDriverThumbnail {
         removeElementIfPresent(document.getElementById(loadMoreDivId));
 
         // Replace page selector content
-        let pageSelectorId = 'pageSelector' + Math.random();
+        let pageSelectorId = 'pageSelectorThumbnail';
+        let showPageSelector = GM_getValue(pageSelectorId, 'none') != 'block' ? 'none' : 'block';
         document.getElementsByClassName('page_selector')[0].innerHTML = pageSelector.innerHTML;
         document.getElementsByClassName('page_selector')[0].id = pageSelectorId;
+        document.getElementsByClassName('page_selector')[0].style.display = showPageSelector;
 
         // Add "load more" div
         let loadMoreDiv = createElementFromHTML(`<div id='${loadMoreDivId}' class='load_more'></div>`);
@@ -764,7 +766,7 @@ class MiniDriver {
         });
 
         // Append page selector
-        let showPageSelector = GM_getValue('showPageSelector', 'none') != 'block' ? 'none' : 'block';
+        let showPageSelector = GM_getValue(pageSelectorId, 'none') != 'block' ? 'none' : 'block';
         let pageSelector = doc.getElementsByClassName('page_selector')[0];
         if (pageSelector) {
             pageSelector.style.display = showPageSelector;
