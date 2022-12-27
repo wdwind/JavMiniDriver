@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Jav小司机
 // @namespace    wddd
-// @version      1.1.4
+// @version      1.1.5
 // @author       wddd
 // @license      MIT
 // @include      http*://*javlibrary.com/*
@@ -24,6 +24,11 @@
 //  * https://greasyfork.org/zh-CN/scripts/37122
 
 // Change log
+// 1.1.5
+/** 
+ * Add page selector in video detail page
+ * Support filters by score and viewers
+*/
 // 1.1.4
 /** 
  * Add support for j41g.com and h28o.com
@@ -252,6 +257,24 @@ function addStyle() {
         .bottombanner2 {
             display: none !important;
         }
+        table.displaymode {
+            table-layout: fixed;
+        }
+        td.mid {
+            text-align: left;
+            font: bold 12px monospace;
+        }
+        input.slider {
+            direction: rtl;
+            height: 10px;
+            margin-left: 10px;
+        }
+        .filter {
+            display: inline-block;
+        }
+        .filterMinValue {
+            display: inline-block;
+        }
     `);
 
     // Homepage
@@ -267,6 +290,13 @@ function addStyle() {
 // Thumbnail
 class MiniDriverThumbnail {
 
+    constructor() {
+        this.filterKeys = ['minScore', 'minViewer'];
+        this.filterConfigs = {'minScore': {'value' : GM_getValue('minScore', 0), 'max': 10},
+                                'minViewer': {'value' : GM_getValue('minViewer', 0), 'max': 100}};
+        this.videoStats = {};
+    }
+
     execute() {
         let videos = document.getElementsByClassName('videos')[0];
         document.getElementsByClassName('videothumblist')[0].innerHTML = `<div class="videothumblist">
@@ -275,6 +305,94 @@ class MiniDriverThumbnail {
         let pageSelector = document.getElementsByClassName('page_selector')[0];
         let nextPage = document.getElementsByClassName('page next')[0];
         this.updatePageContent(videos, pageSelector, nextPage);
+        this.addFilters();
+    }
+
+    addFilters() {
+        let filters = createElementFromHTML(
+            `<td class="mid">
+                <div class="filter">
+                    显示 <label for="score">评分 &gt; </label>
+                    <div class="filterMinValue">0</div>
+                    <!--<input type="number" id="minScore" min="0">-->
+                    <input type="range" id="minScore" min="0" class="slider">
+                </div>
+                <div class="filter">
+                    <label for="viewers">观看人数 &gt; </label>
+                    <div class="filterMinValue">0</div>
+                    <!--<input type="number" id="minViewer" min="0">-->
+                    <input type="range" id="minViewer" min="0" class="slider">
+                </div>
+            </td>`);
+        
+        
+        let sliders = filters.getElementsByClassName('slider');
+        let valueDiv = filters.getElementsByClassName('filterMinValue');
+
+        function round(num) {
+            return Math.round(num * 100) / 100;
+        }
+        function getSliderValue(input, max) {
+            return round(100 - input * (100 / max));
+        }
+        function getConfigValue(input, max) {
+            return round(max - input / (100 / max));
+        }
+
+        for (let i = 0; i < sliders.length; i++) {
+            let config = this.filterConfigs[this.filterKeys[i]];
+
+            sliders[i].value = getSliderValue(config['value'], config['max']);
+            valueDiv[i].innerText = config['value'];
+
+            sliders[i].addEventListener('change', () => {
+                let updatedConfig = getConfigValue(sliders[i].value, config['max']);
+                valueDiv[i].innerText = updatedConfig;
+                GM_setValue(this.filterKeys[i], updatedConfig);
+
+                this.applyFilters();
+            });
+        }
+
+        // Insert filter to the page
+        let mode = document.getElementsByClassName('displaymode');
+        if (mode.length > 0) {
+            let leftMode = mode[0].getElementsByClassName('left');
+            if (leftMode.length > 0) {
+                insertAfter(filters, leftMode[0]);
+            }
+        }
+    }
+
+    applyFilters() {
+        for (let key in this.videoStats) {
+            this.applyFilterOn(key);
+        }
+    }
+
+    applyFilterOn(videoKey) {
+        let video = document.getElementById(videoKey);
+        if (video) {
+            let show = true;
+            
+            for (let filter of this.filterKeys) {
+                let config = GM_getValue(filter, 0);
+
+                if (config > 0) {
+                    if (!(filter in this.videoStats[videoKey]) 
+                            || !this.videoStats[videoKey][filter] 
+                            || this.videoStats[videoKey][filter] == NaN 
+                            || this.videoStats[videoKey][filter] < config) {
+                        show = false;
+                        if (!show) {
+                            break;
+                        }
+                    }
+                }
+            }
+
+            video.style.display = show ? 'inline-block' : 'none';
+        }
     }
 
     updatePageContent(videos, pageSelector, nextPage) {
@@ -326,12 +444,20 @@ class MiniDriverThumbnail {
             if (videoDetailsDoc.getElementById('video_review')) {
                 let videoScoreStr = videoDetailsDoc.getElementById('video_review').getElementsByClassName('score')[0].innerText;
                 videoScore = videoScoreStr.substring(1, videoScoreStr.length - 1);
+                if (!(video.id in this.videoStats)) {
+                    this.videoStats[video.id] = {};
+                }
+                this.videoStats[video.id]['minScore'] = parseFloat(videoScore);
             }
 
             // Video watched
             let videoWatched = '0';
             if (videoDetailsDoc.getElementById('watched')) {
                 videoWatched = videoDetailsDoc.getElementById('watched').getElementsByTagName('a')[0].innerText;
+                if (!(video.id in this.videoStats)) {
+                    this.videoStats[video.id] = {};
+                }
+                this.videoStats[video.id]['minViewer'] = parseFloat(videoWatched);
             }
 
             let videoDetailsHtml = `
@@ -343,6 +469,9 @@ class MiniDriverThumbnail {
             `;
             let videoDetails = createElementFromHTML(videoDetailsHtml);
             video.insertBefore(videoDetails, video.getElementsByClassName('toolbar')[0]);
+
+            // Apply filter
+            this.applyFilterOn(video.id);
         }
     }
 
