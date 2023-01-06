@@ -1023,26 +1023,11 @@ class MiniDriver {
 }
 
 function blockAds() {
-    // Remove ad script if possible
-    let ad = window.document.querySelector('script[src*="yuanmengbi"]');
-    let adId = (ad && ad.src) ? (new URL(ad.src)).searchParams.get('id') : '291';
-    removeElementIfPresent(ad);
-
-    // Add cookie to bypass ad
-    setCookie(adId, "1");
-
-    // Not open ad url
-    // https://stackoverflow.com/a/9172526
-    // https://stackoverflow.com/a/4658196
-    let scope = (typeof unsafeWindow === "undefined") ? window : unsafeWindow;
-    scope.open = function(open) {
-        return function(url, name, features) {
-            if (url.includes('yuanmengbi')) {
-                return;
-            }
-            return open.call(scope, url, name, features);
-        };
-    }(scope.open);
+    // Remove all click events on the "document"
+    document.addEventListener('click', (e) => {
+        e.stopImmediatePropagation();
+        e.stopPropagation();
+    }, true);
 }
 
 // Block ad
