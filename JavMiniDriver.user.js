@@ -1022,12 +1022,33 @@ class MiniDriver {
     }
 }
 
+// Need `// @run-at      document-start` to override the default addEventListener
+// Check https://stackoverflow.com/a/26269087/4214478 and https://stackoverflow.com/a/57437878/4214478
+// EventTarget.prototype.addEventListenerBase = EventTarget.prototype.addEventListener;
+// EventTarget.prototype.addEventListener = function(type, listener) {
+//     if (this == document && type == 'click') {
+//         GM_log('Prevent adding click event on "document" element. Event listener: ' + listener.toString());
+//         return;
+//     }
+//     this.addEventListenerBase(type, listener);
+// };
+
 function blockAds() {
-    // Remove all click events on the "document"
-    // document.addEventListener('click', (e) => {
-    //     e.stopImmediatePropagation();
-    //     e.stopPropagation();
-    // }, true);
+    // Not open ad url
+    // https://stackoverflow.com/a/9172526
+    // https://stackoverflow.com/a/4658196
+
+    let adSites = ['yuanmengbi', 'zhaijv', 'henanlvyi'];
+
+    let scope = (typeof unsafeWindow === "undefined") ? window : unsafeWindow;
+    scope.open = function(open) {
+        return function(url, name, features) {
+            if (adSites.some(site => url.includes(site))) {
+                return;
+            }
+            return open.call(scope, url, name, features);
+        };
+    }(scope.open);
 }
 
 // Block ad
