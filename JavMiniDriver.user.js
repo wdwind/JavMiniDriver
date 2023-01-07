@@ -1024,10 +1024,10 @@ class MiniDriver {
 
 function blockAds() {
     // Remove all click events on the "document"
-    document.addEventListener('click', (e) => {
-        e.stopImmediatePropagation();
-        e.stopPropagation();
-    }, true);
+    // document.addEventListener('click', (e) => {
+    //     e.stopImmediatePropagation();
+    //     e.stopPropagation();
+    // }, true);
 }
 
 // Block ad
