@@ -871,12 +871,6 @@ class MiniDriver {
     }
 
     getPreview() {
-        let includesEditionNumber = (str) => {
-            return str != null
-                    // && str.includes(this.editionNumber.toLowerCase().split('-')[0])
-                    && str.includes(this.editionNumber.toLowerCase().split('-')[1]);
-        }
-
         let nativeDmm = async() => {
             let dmmCid = document.getElementsByClassName('btn_videoplayer')[0].getAttribute('attr-data');
             
@@ -903,31 +897,56 @@ class MiniDriver {
             }
         }
 
-        let r18 = async () => {
-            let request = {url: `https://www.r18.com/common/search/order=match/searchword=${this.editionNumber}/`};
-            let result = await gmFetch(request).catch(err => {GM_log(err); return;});
-            let video_tag = parseHTMLText(result.responseText).querySelector('.js-view-sample');
-            let src = ['high', 'med', 'low']
-                            .map(i => video_tag.getAttribute('data-video-' + i))
-                            .find(i => i);
-            return src;
+        // r18 site is shut down
+        // let r18 = async () => {
+        //     let request = {url: `https://www.r18.com/common/search/order=match/searchword=${this.editionNumber}/`};
+        //     let result = await gmFetch(request).catch(err => {GM_log(err); return;});
+        //     let videoTag = parseHTMLText(result.responseText).querySelector('.js-view-sample');
+        //     let src = ['high', 'med', 'low']
+        //                     .map(i => videoTag.getAttribute('data-video-' + i))
+        //                     .find(i => i);
+        //     return src;
+        // }
+
+        let javTrailer = async () => {
+            let searchRequest = {
+                url: `https://javtrailers.com/api/autocomplete?query=${this.editionNumber}&searchtype=id&lang=en`,
+                headers: {
+                    authorization: 'AELAbPQCh_fifd93wMvf_kxMD_fqkUAVf@BVgb2!md@TNW8bUEopFExyGCoKRcZX',
+                    // cookie: 'auth.strategy=local; user-country=US; searchterm=fset-411; searchtype=id',
+                    // referer: 'https://javtrailers.com/',
+                }
+            };
+            let searchResult = await gmFetch(searchRequest).catch(err => {GM_log(err); return;});
+
+            let results = JSON.parse(searchResult.responseText).results;
+            for (let result of results) {
+                if (this.editionNumber === result.dvdId) {
+                    let videoRequest = {
+                        url : `https://javtrailers.com/api/video/${result.contentId}`, 
+                        headers: {
+                            authorization: 'AELAbPQCh_fifd93wMvf_kxMD_fqkUAVf@BVgb2!md@TNW8bUEopFExyGCoKRcZX',
+                            // cookie: 'auth.strategy=local; user-country=US; searchterm=fset-411; searchtype=id',
+                            // referer: 'https://javtrailers.com/video/1fset00411',
+                        }
+                    };
+                    let videoResult = await gmFetch(videoRequest).catch(err => {GM_log(err); return;});
+                    let trailerUrl = JSON.parse(videoResult.responseText).video.trailer;
+                    if (trailerUrl.includes('.m3u8')) {
+                        GM_log(trailerUrl);
+                        GM_log('.m3u8 is not supported by HTML video tag on some browsers.');
+                        return;
+                    } else {
+                        return trailerUrl;
+                    }
+                }
+            }
         }
 
         let dmm = async () => {
-            // Find dmm cid
-            let bingRequest = {url: `https://www.bing.com/search?q=${this.editionNumber.toLowerCase()}+site%3awww.dmm.co.jp`}
-            let bingResult = await gmFetch(bingRequest).catch(err => {GM_log(err); return;});
-            let bingDoc = parseHTMLText(bingResult.responseText);
-            let pattern = /(cid=[\w]+|pid=[\w]+)/g;
-            let dmmCid = '';
-            for (let match of bingDoc.body.innerHTML.match(pattern)) {
-                if (includesEditionNumber(match)) {
-                    dmmCid = match.replace(/(cid=|pid=)/, '');
-                    break;
-                }
-            }
+            let dmmCid = await this.getDmmCid();
 
-            if (dmmCid == '') {
+            if (dmmCid == null || dmmCid == '') {
                 return;
             }
 
@@ -962,21 +981,21 @@ class MiniDriver {
         // }
 
         // Site closed?
-        // let jav321 = async () => {
-        //     let request = {
-        //         url: `https://www.jav321.com/search`,
-        //         method: 'POST',
-        //         data: `sn=${this.editionNumber}`,
-        //         headers: {
-        //             referer: 'https://www.jav321.com/',
-        //             'content-type': 'application/x-www-form-urlencoded',
-        //         },
-        //     };
+        let jav321 = async () => {
+            let request = {
+                url: `https://www.jav321.com/search`,
+                method: 'POST',
+                data: `sn=${this.editionNumber}`,
+                headers: {
+                    referer: 'https://www.jav321.com/',
+                    'content-type': 'application/x-www-form-urlencoded',
+                },
+            };
 
-        //     let result = await gmFetch(request).catch(err => {GM_log(err); return;});
-        //     let doc = parseHTMLText(result.responseText);
-        //     return doc.getElementsByTagName('source')[0].src;
-        // }
+            let result = await gmFetch(request).catch(err => {GM_log(err); return;});
+            let doc = parseHTMLText(result.responseText);
+            return doc.getElementsByTagName('source')[0].src;
+        }
 
         let kv = async () => {
             if (this.editionNumber.includes('KV-')) {
@@ -995,7 +1014,7 @@ class MiniDriver {
         //                            </iframe>`), 
         //     document.getElementById('topmenu'));
 
-        let previewSearchSources = document.getElementsByClassName('btn_videoplayer').length > 0 ? [nativeDmm] : [r18, dmm, kv];
+        let previewSearchSources = document.getElementsByClassName('btn_videoplayer').length > 0 ? [nativeDmm] : [javTrailer, dmm, jav321, kv];
         Promise.all(
             previewSearchSources.map(source => source().catch(err => {GM_log(err); return;}))
         ).then(responses => {
@@ -1003,7 +1022,7 @@ class MiniDriver {
 
             let videoHtml = responses
                                 .filter(response => response != null
-                                        && includesEditionNumber(response)
+                                        && this.includesEditionNumber(response)
                                         && !response.includes('//_sample.mp4'))
                                 .map(response => `<source src="${response}">`)
                                 .join('');
@@ -1019,6 +1038,57 @@ class MiniDriver {
                 insertAfter(createElementFromHTML(previewHtml), document.getElementById('torrents'));
             }
         });
+    }
+
+    includesEditionNumber(str) {
+        return str != null
+                // && str.includes(this.editionNumber.toLowerCase().split('-')[0])
+                && str.includes(this.editionNumber.toLowerCase().split('-')[1]);
+    }
+
+    async getDmmCid() {
+        let getCidFromUrl = (url) => {
+            if (url.includes('dmm.co.jp') && this.includesEditionNumber(url)) {
+                let cid = url.split('/').at(-2);
+                return cid;
+            }
+        }
+
+        let profileImageUrl = document.getElementById('video_jacket_img').src;
+        let cid = getCidFromUrl(profileImageUrl);
+        if (cid !== null) {
+            return cid;
+        }
+        
+        let urlPattern = /(http|https):\/\/[\w-]+(\.[\w-]+)+([\w.,@?^=%&amp;:\/~+#-]*[\w@?^=%&amp;\/~+#-])?/g;
+        for (let url of document.body.innerHTML.match(urlPattern)) {
+            cid = getCidFromUrl(url);
+            if (cid != null) {
+                return cid;
+            }
+        }
+
+        let getCidFromSearchEngine = async (searchUrl) => {
+            let request = {url: searchUrl};
+            let response = await gmFetch(request).catch(err => {GM_log(err); return;});
+            let pattern = /(cid=[\w]+|pid=[\w]+)/g;
+            for (let match of response.responseText.match(pattern)) {
+                if (this.includesEditionNumber(match)) {
+                    return match.replace(/(cid=|pid=)/, '');
+                }
+            }
+        }
+
+        // Find dmm cid from search engines
+        let bingCid = getCidFromSearchEngine(`https://www.bing.com/search?q=${this.editionNumber.toLowerCase()}+site%3awww.dmm.co.jp`);
+        if (bingCid != null) {
+            return bingCid;
+        }
+
+        let googleCid = await getCidFromSearchEngine(`https://www.google.com/search?q=${this.editionNumber}+site%3Awww.dmm.co.jp`);
+        if (googleCid != null) {
+            return googleCid;
+        }
     }
 }
 
