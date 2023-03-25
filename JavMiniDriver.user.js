@@ -168,7 +168,7 @@ function gmFetch(obj) {
             // timeout in ms
             timeout: obj.timeout,
             url: obj.url,
-            headers: obj.headers,
+            headers: obj.headers ? obj.headers : {},
             data: obj.data,
             onload: (result) => {
                 if (result.status >= 200 && result.status < 300) {
@@ -186,29 +186,14 @@ function gmFetch(obj) {
 // For the requests in the same domain
 // XMLHttpRequest is made within the page, so it will send the cookies
 function xhrFetch(obj) {
-    return new Promise((resolve, reject) => {
-        let xhr = new XMLHttpRequest();
-        xhr.open(obj.method || 'GET', obj.url);
-        // timeout in ms
-        xhr.timeout = obj.timeout;
-        if (obj.headers) {
-            Object.keys(obj.headers).forEach(key => {
-                xhr.setRequestHeader(key, obj.headers[key]);
-            });
-        }
-        xhr.withCredentials = true;
-        xhr.onload = () => {
-            if (xhr.status >= 200 && xhr.status < 300) {
-                resolve(xhr);
-            } else {
-                reject(xhr);
-            }
-        };
-        xhr.onerror = () => reject(xhr);
-        xhr.ontimeout = () => reject(xhr);
-        xhr.send(obj.data);
+    return fetch(obj.url, {
+        method: obj.method || 'GET',
+        headers: obj.headers || {},
+        body: obj.data,
+        credentials: 'include',
+        timeout: obj.timeout,
     });
-};
+}
 
 // Style
 
