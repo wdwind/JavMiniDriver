@@ -417,8 +417,9 @@ class MiniDriverThumbnail {
     async updateVideoDetail(video) {
         if (video.id.includes('vid_')) {
             let request = {url: `/cn/?v=${video.id.substring(4)}`};
-            let result = await xhrFetch(request).catch(err => {GM_log(err); return;});
-            let videoDetailsDoc = parseHTMLText(result.responseText);
+            let response = await xhrFetch(request).catch(err => {GM_log(err); return;});
+            let responseText = await response.text().catch(err => {GM_log(err); return;});
+            let videoDetailsDoc = parseHTMLText(responseText);
 
             // Video date
             let videoDate = '';
@@ -481,8 +482,9 @@ class MiniDriverThumbnail {
         history.pushState(history.state, window.document.title, url);
 
         // Fetch next page
-        let result = await xhrFetch({url: url}).catch(err => {GM_log(err); return;});
-        let nextPageDoc = parseHTMLText(result.responseText);
+        let response = await xhrFetch({url: url}).catch(err => {GM_log(err); return;});
+        let responseText = await response.text().catch(err => {GM_log(err); return;});
+        let nextPageDoc = parseHTMLText(responseText);
 
         // Update page content
         let videos = nextPageDoc.getElementsByClassName('videos')[0];
@@ -574,8 +576,9 @@ class MiniDriver {
         // Add English title
         if (!window.location.href.includes('/en/')) {
             let request = {url: `/en/?v=${this.javVideoId}`};
-            let result = await xhrFetch(request).catch(err => {GM_log(err); return;});
-            let videoDetailsDoc = parseHTMLText(result.responseText);
+            let response = await xhrFetch(request).catch(err => {GM_log(err); return;});
+            let responseText = await response.text().catch(err => {GM_log(err); return;});
+            let videoDetailsDoc = parseHTMLText(responseText);
             let englishTitle = videoDetailsDoc.getElementById('video_title')
                                     .getElementsByClassName('post-title')[0]
                                     .getElementsByTagName('a')[0].innerText;
@@ -715,8 +718,9 @@ class MiniDriver {
 
         // Load more reviews
         let request = {url: `/cn/${urlPath}.php?v=${this.javVideoId}&mode=2&page=${page}`};
-        let result = await xhrFetch(request).catch(err => {GM_log(err); return;});
-        let doc = parseHTMLText(result.responseText);
+        let response = await xhrFetch(request).catch(err => {GM_log(err); return;});
+        let responseText = await response.text().catch(err => {GM_log(err); return;});
+        let doc = parseHTMLText(responseText);
 
         // Remove the load more div and page selector div in current page
         let oldLoadMoreDiv = document.getElementById(loadMoreId);
