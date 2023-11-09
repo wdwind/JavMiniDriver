@@ -804,8 +804,9 @@ class MiniDriver {
             {regex: /imgdrive/, process: (input) => input.replace('/small/', '/big/').replace('/small-medium/', '/big/')},
             {regex: /filesor/, process: (input) => input.replace('_s', '')},
             {regex: /pics\.dmm\.co\.jp/, process: (input) => input.replace('-', 'jp-')},
-            {regex: /imagehaha|imagetwist/, process: (input) => input.replace('/th/', '/i/')},
+            // {regex: /imagehaha|imagetwist/, process: (input) => input.replace('/th/', '/i/')},
             {regex: /3xplanetimg/, process: (input) => input.replace('/s200/', '/s0/')},
+            {regex: /picstate\.com/, process: (input) => input},
             {regex: /pics4you|silverpic|imgsto|picdollar|imagebam|premalo/, process: 
                 async (input, parent) => {
                     let url = new URL(parent.href).searchParams.get('url');
