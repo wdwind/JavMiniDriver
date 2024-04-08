@@ -123,41 +123,6 @@ function createElementFromHTML(html) {
     return template.content.firstChild;
 }
 
-function getLoadMoreButton(buttonId, pageSelectorId, callback) {
-    let loadMoreButton = createElementFromHTML('<input type="button" class="largebutton" value="加载更多 &or;">');
-    loadMoreButton.addEventListener('click', callback);
-    buttonId = (buttonId != null) ? buttonId : 'load_more';
-
-    let loadMoreDiv = createElementFromHTML(`<div id="${buttonId}" class="load_more"></div>`);
-    loadMoreDiv.appendChild(loadMoreButton);
-
-    if (document.getElementById(pageSelectorId) != null) {
-        let toggle = (togglePageSelector) => {
-            let pageSelector = document.getElementById(pageSelectorId);
-            if (pageSelector.style.display === 'none') {
-                pageSelector.style.display = 'block';
-                togglePageSelector.innerText = '隐藏页数';
-                GM_setValue(pageSelectorId, 'block');
-            } else {
-                pageSelector.style.display = 'none';
-                togglePageSelector.innerText = '显示页数';
-                GM_setValue(pageSelectorId, 'none');
-            }
-        };
-        
-        let toggleMessage = GM_getValue(pageSelectorId, 'none') != 'block' ? '显示页数' : '隐藏页数';
-        let togglePageSelector = createElementFromHTML(
-            `<div id='togglePageSelector' class='toggle'>
-                ${toggleMessage}
-            </div>`);
-        togglePageSelector.addEventListener('click', () => toggle(togglePageSelector));
-
-        loadMoreDiv.appendChild(togglePageSelector);
-    }
-    
-    return loadMoreDiv;
-}
-
 // For the requests in different domains
 // GM_xmlhttpRequest is made from the background page, and as a result, it
 // doesn't have cookies in the request header
@@ -288,8 +253,7 @@ class MiniDriverThumbnail {
                                                                             <div class="videos"></div>
                                                                         </div>`;
         let pageSelector = document.getElementsByClassName('page_selector')[0];
-        let nextPage = document.getElementsByClassName('page next')[0];
-        this.updatePageContent(videos, pageSelector, nextPage);
+        this.updatePageContent(videos, pageSelector);
         this.addFilters();
     }
 
@@ -380,22 +344,21 @@ class MiniDriverThumbnail {
         }
     }
 
-    updatePageContent(videos, pageSelector, nextPage) {
-        let loadMoreDivId = 'load_next_page';
-        let loadMoreButtonId = 'load_next_page_button';
-
+    updatePageContent(videos, pageSelector) {
         // Add videos to the page
         let currentVideos = document.getElementsByClassName('videos')[0];
         if (videos) {
+            let wait = 0;
             Array.from(videos.children).forEach(video => {
                 currentVideos.appendChild(video);
-                this.updateVideoDetail(video);
+
+                let t = Math.floor(wait / 8) * 10000 + 1000 * Math.random();
+                setTimeout(() => this.updateVideoDetail(video), t);
+                wait += 1;
+
                 this.updateVideoEvents(video);
             });
         }
-
-        // Remove current "load more" div
-        removeElementIfPresent(document.getElementById(loadMoreDivId));
 
         // Replace page selector content
         let pageSelectorId = 'pageSelectorThumbnail';
@@ -403,15 +366,6 @@ class MiniDriverThumbnail {
         document.getElementsByClassName('page_selector')[0].innerHTML = pageSelector.innerHTML;
         document.getElementsByClassName('page_selector')[0].id = pageSelectorId;
         document.getElementsByClassName('page_selector')[0].style.display = showPageSelector;
-
-        // Add "load more" div
-        let loadMoreDiv = createElementFromHTML(`<div id='${loadMoreDivId}' class='load_more'></div>`);
-        if (nextPage) {
-            let nextPageUrl = nextPage.href;
-            let loadMoreButton = getLoadMoreButton(loadMoreButtonId, pageSelectorId, async () => this.getNextPage(nextPageUrl));
-            loadMoreDiv.appendChild(loadMoreButton);
-            document.getElementById('rightcolumn').appendChild(loadMoreDiv);
-        }
     }
 
     async updateVideoDetail(video) {
@@ -489,8 +443,7 @@ class MiniDriverThumbnail {
         // Update page content
         let videos = nextPageDoc.getElementsByClassName('videos')[0];
         let pageSelector = nextPageDoc.getElementsByClassName('page_selector')[0];
-        let nextPage = nextPageDoc.getElementsByClassName('page next')[0];
-        this.updatePageContent(videos, pageSelector, nextPage);
+        this.updatePageContent(videos, pageSelector);
     }
 }
 
@@ -551,6 +504,7 @@ class MiniDriver {
             }
             #preview video {
                 max-width: 100%;
+                max-height: 80vh;
             }
             .screenshot {
                 cursor: pointer;
@@ -711,7 +665,6 @@ class MiniDriver {
     }
 
     async getNextPage(page, pageType) {
-        let loadMoreId = 'load_more_' + pageType;
         let pageSelectorId = 'page_selector_' + pageType;
         let urlPath = 'video' + pageType;
         let elementsId = 'video_' + pageType;
@@ -722,11 +675,7 @@ class MiniDriver {
         let responseText = await response.text().catch(err => {GM_log(err); return;});
         let doc = parseHTMLText(responseText);
 
-        // Remove the load more div and page selector div in current page
-        let oldLoadMoreDiv = document.getElementById(loadMoreId);
-        if (oldLoadMoreDiv != null) {
-            oldLoadMoreDiv.parentNode.removeChild(oldLoadMoreDiv);
-        }
+        // Remove the page selector div in current page
         let oldPageSelectorDiv = document.getElementById(pageSelectorId);
         if (oldPageSelectorDiv != null) {
             oldPageSelectorDiv.parentNode.removeChild(oldPageSelectorDiv);
@@ -742,14 +691,14 @@ class MiniDriver {
         Array.from(elements.getElementsByClassName('t')).forEach(element => {
             let elementText = parseBBCode(escapeHtml(element.getElementsByTagName('textarea')[0].innerText));
             let elementHtml = createElementFromHTML(`<div>${parseHTMLText(elementText).body.innerHTML}</div>`);
-            element.getElementsByClassName('text')[0].replaceWith(this.processScreenshot(elementHtml));
+            element.getElementsByClassName('text')[0].replaceWith(this.processUrls(elementHtml));
         });
 
         // Append elements to the page
         let currentElements = document.getElementById(elementsId);
         let bottomLine = currentElements.getElementsByClassName('grey')[0];
         Array.from(elements.children).forEach(element => {
-            if (element.tagName == 'TABLE') {
+            if (element.tagName == 'TABLE' || element.tagName == 'TD') {
                 currentElements.insertBefore(element, bottomLine);
             }
         });
@@ -762,19 +711,12 @@ class MiniDriver {
             pageSelector.id = pageSelectorId;
             let as = pageSelector.getElementsByTagName('a');
             for (let a of as) {
-                let nextPage = (new URL(a.href)).searchParams.get('page');
+                let nextPage = (new URL(a.href, a.href.includes('https') ? undefined : 'https://www.javlibrary.com/')).searchParams.get('page');
                 a.removeAttribute('href');
                 a.style.cursor = 'pointer';
                 a.addEventListener('click', async () => this.getNextPage(nextPage ? parseInt(nextPage) : 1, pageType));
             }
             insertAfter(pageSelector, currentElements);
-        }
-        
-        // Append load more if next page exists
-        let nextPage = pageSelector.getElementsByClassName('page next');
-        if (nextPage[0]) {
-            let loadMoreButton = getLoadMoreButton(loadMoreId, pageSelectorId, async () => this.getNextPage(page + 1, pageType));
-            insertAfter(loadMoreButton, (pageSelector) ? pageSelector : currentElements);
         }
     }
 
@@ -791,72 +733,17 @@ class MiniDriver {
         this.getNextPage(1, 'comments');
     }
 
-    processScreenshot(content) {
-        let sources = [
-            {regex: /imgspice/, process: (input) => input.replace(/_s|_t/, '')},
-            {regex: /t[\d]+\.pixhost/, process: (input) => input.replace(/t([\d]+\.)/, 'img$1').replace('/thumbs/', '/images/')},
-            {regex: /img[\d]+\.pixhost/, process: (input) => input},
-            {regex: /oloadcdn|subyshare|verystream|photosex|sehuatuchuang|900file|avcensdownload|ekladata|japanese\-bukkake/, process: (input) => input},
-            {regex: /iceimg/, process: (input) => input.replace('/ssd/small/', '/uploads3/pixsense/big/').replace('/small-', '/')},
-            {regex: /imgfrost/, process: (input) => input.replace('/small/small_', '/big/')},
-            {regex: /picz\.in\.th/, process: (input) => input.replace('.md', '')},
-            {regex: /imgtaxi/, process: (input) => input.replace('/small/', '/big/').replace('/small-medium/', '/big/')},
-            {regex: /imgdrive/, process: (input) => input.replace('/small/', '/big/').replace('/small-medium/', '/big/')},
-            {regex: /filesor/, process: (input) => input.replace('_s', '')},
-            {regex: /pics\.dmm\.co\.jp/, process: (input) => input.replace('-', 'jp-')},
-            // {regex: /imagehaha|imagetwist/, process: (input) => input.replace('/th/', '/i/')},
-            {regex: /3xplanetimg/, process: (input) => input.replace('/s200/', '/s0/')},
-            {regex: /picstate\.com/, process: (input) => input},
-            {regex: /pics4you|silverpic|imgsto|picdollar|imagebam|premalo/, process: 
-                async (input, parent) => {
-                    let url = new URL(parent.href).searchParams.get('url');
-                    let imgId = url.split('/')[3];
-                    let request = {
-                        url: url, 
-                        method: 'POST', 
-                        data: `op=view&id=${imgId}&pre=1&next=Continue+to+image...`,
-                        headers: {
-                            'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
-                            'accept-encoding': 'gzip, deflate, br',
-                            'cache-control': 'max-age=0',
-                            'content-type': 'application/x-www-form-urlencoded',
-                            'cookie': `file_code=${imgId}; lang=english; fcode=${imgId}`,
-                            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/106.0.0.0 Safari/537.36',
-                            'referer': url,
-                            'upgrade-insecure-requests': 1,
-                        },
-                    };
-                    let result = await gmFetch(request).catch(err => {GM_log(err); return;});;
-                    let doc = parseHTMLText(result.responseText);
-                    let srcUrl = doc.getElementsByClassName('pic')[0].src;
-                    // GM_log(srcUrl);
-                    return srcUrl;
+    processUrls(content) {
+        Array.from(content.getElementsByTagName('a')).forEach(a => {
+            if (a.href.includes('redirect.php?url=')) {
+                let encodedRealUrl = a.href.replace('redirect.php?url=', '');
+                let realUrl = decodeURIComponent(encodedRealUrl);
+                if (realUrl.indexOf('&ver=') > 0) {
+                    realUrl = realUrl.substring(0, realUrl.indexOf('&ver='));
                 }
-            },
-        ];
-
-        // Get full img url
-        Array.from(content.getElementsByTagName('img')).forEach(async img => {
-            if (img.src != null) {
-                let parent = img.parentNode;
-                for (let source of sources) {
-                    if (img.src.match(source.regex)) {
-                        let rawImgUrl = await source.process(img.src, img.parentNode);
-                        let screenshot = createElementFromHTML(`
-                            <img class="screenshot processed" 
-                                referrerpolicy="no-referrer" 
-                                src="${img.src}" 
-                                data-src="${rawImgUrl}" 
-                                style="border: 1px solid #ff9900;">
-                        `);
-                        screenshot.addEventListener('click', () => this.lazyScreenShotOnclick(screenshot));
-                        parent.replaceWith(screenshot);
-                        break;
-                    }
-                }
+                a.href = realUrl;
             }
         });
-
         return content;
     }
 
