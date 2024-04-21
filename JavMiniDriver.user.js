@@ -160,6 +160,36 @@ function xhrFetch(obj) {
     });
 }
 
+function xhrFetchWithRetry(obj) {
+    let fun = (obj) => xhrFetch(obj).then(response => {
+        if (response.status == 429) {
+            throw new Error('429 (Too Many Requests)');
+        } else {
+            return response;
+        }
+    });
+
+    return retry(fun, obj);
+}
+
+async function retry(fun, input, max_retries = 10, retries = 0, initial = 8000) {
+    try {
+		return await fun(input);
+	} catch (e) {
+		if (retries > max_retries) {
+			throw e;
+		}
+
+        GM_log(`Retrying ${retries}, wait ${initial + (2 ** retries) * 1000} ms`);
+
+        // wait
+		await new Promise(_ => setTimeout(_, initial + (2 ** retries) * 1000));
+
+        // retry
+		return retry(fun, input, max_retries, retries + 1, initial);
+	}
+}
+
 // Style
 
 function addStyle() {
@@ -348,14 +378,9 @@ class MiniDriverThumbnail {
         // Add videos to the page
         let currentVideos = document.getElementsByClassName('videos')[0];
         if (videos) {
-            let wait = 0;
             Array.from(videos.children).forEach(video => {
                 currentVideos.appendChild(video);
-
-                let t = Math.floor(wait / 8) * 10000 + 1000 * Math.random();
-                setTimeout(() => this.updateVideoDetail(video), t);
-                wait += 1;
-
+                this.updateVideoDetail(video);
                 this.updateVideoEvents(video);
             });
         }
@@ -371,7 +396,7 @@ class MiniDriverThumbnail {
     async updateVideoDetail(video) {
         if (video.id.includes('vid_')) {
             let request = {url: `/cn/?v=${video.id.substring(4)}`};
-            let response = await xhrFetch(request).catch(err => {GM_log(err); return;});
+            let response = await xhrFetchWithRetry(request).catch(err => {GM_log(err); return;});
             let responseText = await response.text().catch(err => {GM_log(err); return;});
             let videoDetailsDoc = parseHTMLText(responseText);
 
@@ -436,7 +461,7 @@ class MiniDriverThumbnail {
         history.pushState(history.state, window.document.title, url);
 
         // Fetch next page
-        let response = await xhrFetch({url: url}).catch(err => {GM_log(err); return;});
+        let response = await xhrFetchWithRetry({url: url}).catch(err => {GM_log(err); return;});
         let responseText = await response.text().catch(err => {GM_log(err); return;});
         let nextPageDoc = parseHTMLText(responseText);
 
@@ -530,7 +555,7 @@ class MiniDriver {
         // Add English title
         if (!window.location.href.includes('/en/')) {
             let request = {url: `/en/?v=${this.javVideoId}`};
-            let response = await xhrFetch(request).catch(err => {GM_log(err); return;});
+            let response = await xhrFetchWithRetry(request).catch(err => {GM_log(err); return;});
             let responseText = await response.text().catch(err => {GM_log(err); return;});
             let videoDetailsDoc = parseHTMLText(responseText);
             let englishTitle = videoDetailsDoc.getElementById('video_title')
@@ -671,7 +696,7 @@ class MiniDriver {
 
         // Load more reviews
         let request = {url: `/cn/${urlPath}.php?v=${this.javVideoId}&mode=2&page=${page}`};
-        let response = await xhrFetch(request).catch(err => {GM_log(err); return;});
+        let response = await xhrFetchWithRetry(request).catch(err => {GM_log(err); return;});
         let responseText = await response.text().catch(err => {GM_log(err); return;});
         let doc = parseHTMLText(responseText);
 
