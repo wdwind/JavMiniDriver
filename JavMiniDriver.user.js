@@ -530,6 +530,8 @@ class MiniDriver {
             #preview video {
                 max-width: 100%;
                 max-height: 80vh;
+                display: block;
+                margin-right: auto;
             }
             .screenshot {
                 cursor: pointer;
@@ -772,174 +774,241 @@ class MiniDriver {
         return content;
     }
 
-    getPreview() {
-        let nativeDmm = async() => {
-            let dmmCid = document.getElementsByClassName('btn_videoplayer')[0].getAttribute('attr-data');
-            
-            // let request = {url: `https://www.dmm.co.jp/service/digitalapi/-/html5_player/=/cid=${dmmCid}/mtype=AhRVShI_/service=litevideo/mode=/width=560/height=360/`};
-            let request = {url: `https://www.dmm.co.jp/service/-/html5_player/=/cid=${dmmCid}/mtype=AhRVShI_/service=mono/floor=dvd/mode=/`}
+    extractContentIdFromPreviewThumbs() {
+        try {
+            // 1. Find previewthumbs div
+            const previewThumbsDiv = document.querySelector('.previewthumbs');
+            if (!previewThumbsDiv) {
+                GM_log('previewthumbs div not found');
+                return null;
+            }
 
-            let result = await gmFetch(request).catch(err => {GM_log(err); return;});
-            let doc = parseHTMLText(result.responseText);
+            // 2. Get all image URLs from the div
+            const divContent = previewThumbsDiv.innerHTML;
 
-            // Very hacky... Didn't find a way to parse the HTML with JS.
-            for (let script of doc.getElementsByTagName('script')) {
-                if (script.innerText != null && script.innerText.includes('.mp4')) {
-                    for (let line of script.innerText.split('\n')) {
-                        if (line.includes('.mp4')) {
-                            line = line.substring(line.indexOf('{'), line.lastIndexOf(';'));
-                            let videoSrc = JSON.parse(line).src;
-                            if (!videoSrc.startsWith('http')) {
-                                videoSrc = 'http:' + videoSrc;
+            // 3. Extract content ID from image URL pattern
+            // Pattern: https://pics.dmm.co.jp/digital/video/{contentId}/{contentId}jp-{number}.jpg
+            const pattern = /https:\/\/pics\.dmm\.co\.jp\/digital\/video\/([a-zA-Z0-9]+)\/[a-zA-Z0-9]+jp-\d+\.jpg/g;
+            const matches = divContent.match(pattern);
+
+            if (!matches || matches.length === 0) {
+                GM_log('No matching image URLs found in previewthumbs div');
+                return null;
+            }
+
+            // 4. Parse content ID from first valid URL
+            const firstUrl = matches[0];
+            const contentIdMatch = firstUrl.match(/https:\/\/pics\.dmm\.co\.jp\/digital\/video\/([a-zA-Z0-9]+)\//);
+
+            if (!contentIdMatch || contentIdMatch.length < 2) {
+                GM_log('Could not extract content ID from URL: ' + firstUrl);
+                return null;
+            }
+
+            const contentId = contentIdMatch[1];
+
+            // 5. Validate content ID format
+            if (!contentId || contentId.length < 8 || contentId.length > 12) {
+                GM_log('Invalid content ID format: ' + contentId);
+                return null;
+            }
+
+            GM_log('Extracted content ID: ' + contentId);
+            return contentId;
+
+        } catch (error) {
+            GM_log('Error extracting content ID from previewthumbs: ' + error);
+            return null;
+        }
+    }
+
+
+    async extractVideoUrlFromJavTrailers(contentId) {
+        try {
+            // Fetch the javtrailers page with timeout
+            const url = `https://javtrailers.com/video/${contentId}`;
+            const response = await gmFetch({
+                url: url,
+                timeout: 10000 // 10 second timeout
+            });
+
+            if (response.status >= 200 && response.status < 300) {
+                const html = response.responseText;
+
+                // Find the __NUXT_DATA__ script tag
+                const nuxtDataMatch = html.match(/<script type="application\/json" id="__NUXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+
+                if (nuxtDataMatch && nuxtDataMatch[1]) {
+                    try {
+                        const nuxtData = JSON.parse(nuxtDataMatch[1]);
+
+                        // The JSON is a complex array where numeric indices reference other positions
+                        // We need to find the trailerG reference and then look up the actual value
+
+                        // First, let's try to find the trailerG reference in the array
+                        // The structure appears to be: [array with data...]
+                        // We need to search through the array for an object containing "trailerG"
+
+                        function findTrailerGReference(arr) {
+                            for (let i = 0; i < arr.length; i++) {
+                                const item = arr[i];
+                                if (typeof item === 'object' && item !== null) {
+                                    // Check if this object has trailerG property
+                                    if ('trailerG' in item) {
+                                        return item.trailerG; // This should be a numeric index
+                                    }
+
+                                    // Search recursively in nested objects
+                                    if (Array.isArray(item)) {
+                                        const result = findTrailerGReference(item);
+                                        if (result !== null) return result;
+                                    } else if (typeof item === 'object') {
+                                        // Search in object values
+                                        for (const key in item) {
+                                            if (typeof item[key] === 'object' && item[key] !== null) {
+                                                if ('trailerG' in item[key]) {
+                                                    return item[key].trailerG;
+                                                }
+                                            } else if (Array.isArray(item[key])) {
+                                                const result = findTrailerGReference(item[key]);
+                                                if (result !== null) return result;
+                                            }
+                                        }
+                                    }
+                                }
                             }
-                            return videoSrc;
+                            return null;
                         }
-                    }
-                }
-            }
-        }
 
-        // r18 site is shut down
-        // let r18 = async () => {
-        //     let request = {url: `https://www.r18.com/common/search/order=match/searchword=${this.editionNumber}/`};
-        //     let result = await gmFetch(request).catch(err => {GM_log(err); return;});
-        //     let videoTag = parseHTMLText(result.responseText).querySelector('.js-view-sample');
-        //     let src = ['high', 'med', 'low']
-        //                     .map(i => videoTag.getAttribute('data-video-' + i))
-        //                     .find(i => i);
-        //     return src;
-        // }
+                        const trailerGIndex = findTrailerGReference(nuxtData);
 
-        let javTrailer = async () => {
-            let searchRequest = {
-                url: `https://javtrailers.com/api/autocomplete?query=${this.editionNumber}&searchtype=id&lang=en`,
-                headers: {
-                    authorization: 'AELAbPQCh_fifd93wMvf_kxMD_fqkUAVf@BVgb2!md@TNW8bUEopFExyGCoKRcZX',
-                    // cookie: 'auth.strategy=local; user-country=US; searchterm=fset-411; searchtype=id',
-                    // referer: 'https://javtrailers.com/',
-                }
-            };
-            let searchResult = await gmFetch(searchRequest).catch(err => {GM_log(err); return;});
-
-            let results = JSON.parse(searchResult.responseText).results;
-            for (let result of results) {
-                if (this.editionNumber === result.dvdId) {
-                    let videoRequest = {
-                        url : `https://javtrailers.com/api/video/${result.contentId}`, 
-                        headers: {
-                            authorization: 'AELAbPQCh_fifd93wMvf_kxMD_fqkUAVf@BVgb2!md@TNW8bUEopFExyGCoKRcZX',
-                            // cookie: 'auth.strategy=local; user-country=US; searchterm=fset-411; searchtype=id',
-                            // referer: 'https://javtrailers.com/video/1fset00411',
-                        }
-                    };
-                    let videoResult = await gmFetch(videoRequest).catch(err => {GM_log(err); return;});
-                    let trailerUrl = JSON.parse(videoResult.responseText).video.trailer;
-                    if (trailerUrl.includes('.m3u8')) {
-                        GM_log(trailerUrl);
-                        GM_log('.m3u8 is not supported by HTML video tag on some browsers.');
-                        return;
-                    } else {
-                        return trailerUrl;
-                    }
-                }
-            }
-        }
-
-        let dmm = async () => {
-            let dmmCid = await this.getDmmCid();
-
-            if (dmmCid == null || dmmCid == '') {
-                return;
-            }
-
-            // let request = {url: `https://www.dmm.co.jp/service/digitalapi/-/html5_player/=/cid=${dmmCid}/mtype=AhRVShI_/service=litevideo/mode=/width=560/height=360/`};
-            let request = {url: `https://www.dmm.co.jp/service/-/html5_player/=/cid=${dmmCid}/mtype=AhRVShI_/service=mono/floor=dvd/mode=/`}
-
-            let result = await gmFetch(request).catch(err => {GM_log(err); return;});
-            let doc = parseHTMLText(result.responseText);
-
-            // Very hacky... Didn't find a way to parse the HTML with JS.
-            for (let script of doc.getElementsByTagName('script')) {
-                if (script.innerText != null && script.innerText.includes('.mp4')) {
-                    for (let line of script.innerText.split('\n')) {
-                        if (line.includes('.mp4')) {
-                            line = line.substring(line.indexOf('{'), line.lastIndexOf(';'));
-                            let videoSrc = JSON.parse(line).src;
-                            if (!videoSrc.startsWith('http')) {
-                                videoSrc = 'http:' + videoSrc;
+                        if (trailerGIndex !== null && typeof trailerGIndex === 'number') {
+                            // The index should point to the actual URL in the array
+                            if (trailerGIndex >= 0 && trailerGIndex < nuxtData.length) {
+                                const trailerGUrl = nuxtData[trailerGIndex];
+                                if (typeof trailerGUrl === 'string' && trailerGUrl.startsWith('http')) {
+                                    GM_log(`Found trailerG URL at index ${trailerGIndex}: ${trailerGUrl}`);
+                                    return trailerGUrl;
+                                }
                             }
-                            return videoSrc;
+                        }
+
+                        // Alternative approach: search for the URL pattern directly in the JSON string
+                        // Look for "trailerG": followed by a number, then find that index in the array
+                        const trailerGPattern = /"trailerG"\s*:\s*(\d+)/;
+                        const trailerGMatch = nuxtDataMatch[1].match(trailerGPattern);
+
+                        if (trailerGMatch && trailerGMatch[1]) {
+                            const index = parseInt(trailerGMatch[1]);
+                            if (index >= 0 && index < nuxtData.length) {
+                                const trailerGUrl = nuxtData[index];
+                                if (typeof trailerGUrl === 'string' && trailerGUrl.startsWith('http')) {
+                                    GM_log(`Found trailerG URL via index ${index}: ${trailerGUrl}`);
+                                    return trailerGUrl;
+                                }
+                            }
+                        }
+
+                        // Fallback: search for media.javtrailers.com URLs in the entire JSON
+                        const mediaUrlPattern = /https:\/\/media\.javtrailers\.com\/[^"]+/g;
+                        const mediaUrls = nuxtDataMatch[1].match(mediaUrlPattern);
+                        if (mediaUrls && mediaUrls.length > 0) {
+                            // Return the first media.javtrailers.com URL
+                            GM_log(`Found media.javtrailers.com URL: ${mediaUrls[0]}`);
+                            return mediaUrls[0];
+                        }
+
+                        // Last resort: search for any video URL pattern
+                        const videoUrlPattern = /https:\/\/[^"]+\.(mp4|m3u8|webm)[^"]*/gi;
+                        const videoUrls = nuxtDataMatch[1].match(videoUrlPattern);
+                        if (videoUrls && videoUrls.length > 0) {
+                            // Prefer media.javtrailers.com URLs
+                            const mediaUrl = videoUrls.find(url => url.includes('media.javtrailers.com'));
+                            if (mediaUrl) {
+                                GM_log(`Found video URL: ${mediaUrl}`);
+                                return mediaUrl;
+                            }
+                            // Otherwise return the first video URL
+                            GM_log(`Found video URL: ${videoUrls[0]}`);
+                            return videoUrls[0];
+                        }
+
+                    } catch (parseError) {
+                        GM_log(`Error parsing NUXT data: ${parseError}`);
+
+                        // Fallback: try to find trailerG URL in the entire HTML
+                        const trailerGUrlPattern = /"trailerG"\s*:\s*"([^"]+)"/;
+                        const trailerGUrlMatch = html.match(trailerGUrlPattern);
+                        if (trailerGUrlMatch && trailerGUrlMatch[1]) {
+                            GM_log(`Found trailerG URL via regex fallback: ${trailerGUrlMatch[1]}`);
+                            return trailerGUrlMatch[1];
                         }
                     }
                 }
+
+                // Alternative: try to find video URLs in the entire HTML
+                const videoUrlPattern = /https:\/\/[^"]+\.(mp4|m3u8|webm)[^"]*/gi;
+                const videoUrls = html.match(videoUrlPattern);
+                if (videoUrls && videoUrls.length > 0) {
+                    // Prefer media.javtrailers.com URLs
+                    const mediaUrl = videoUrls.find(url => url.includes('media.javtrailers.com'));
+                    if (mediaUrl) {
+                        GM_log(`Found video URL in HTML: ${mediaUrl}`);
+                        return mediaUrl;
+                    }
+                    // Otherwise return the first video URL
+                    GM_log(`Found video URL in HTML: ${videoUrls[0]}`);
+                    return videoUrls[0];
+                }
+
+                GM_log('Could not find trailerG URL in javtrailers page');
+                return null;
+            } else {
+                GM_log(`Failed to fetch javtrailers page: ${response.status}`);
+                return null;
             }
+        } catch (error) {
+            GM_log(`Error extracting video URL: ${error}`);
+            return null;
         }
+    }
 
-        // let sod = async () => {
-        //     let request = {url: `https://ec.sod.co.jp/prime/videos/sample.php?id=${this.editionNumber}`};
-        //     let result = await gmFetch(request).catch(err => {GM_log(err); return;});
-        //     let doc = parseHTMLText(result.responseText);
-        //     return doc.getElementsByTagName('source')[0].src;
-        // }
+    async getPreview() {
+        // 1. Extract content ID from previewthumbs div
+        const contentId = this.extractContentIdFromPreviewThumbs();
 
-        // Site closed?
-        let jav321 = async () => {
-            let request = {
-                url: `https://www.jav321.com/search`,
-                method: 'POST',
-                data: `sn=${this.editionNumber}`,
-                headers: {
-                    referer: 'https://www.jav321.com/',
-                    'content-type': 'application/x-www-form-urlencoded',
-                },
-            };
-
-            let result = await gmFetch(request).catch(err => {GM_log(err); return;});
-            let doc = parseHTMLText(result.responseText);
-            return doc.getElementsByTagName('source')[0].src;
-        }
-
-        let kv = async () => {
-            if (this.editionNumber.includes('KV-')) {
-                return `http://fskvsample.knights-visual.com/samplemov/${this.editionNumber.toLowerCase()}-samp-st.mp4`;
-            }
-
+        // 2. If no content ID found, log error and exit
+        if (!contentId) {
+            GM_log('Could not extract content ID from previewthumbs div');
             return;
         }
-        
-        // // Prepare for sod adult check and DDoS check
-        // // iframe vs. embed vs. object https://stackoverflow.com/a/21115112/4214478
-        // // ifrmae sandbox https://www.w3schools.com/tags/att_iframe_sandbox.asp
-        // insertBefore(
-        //     createElementFromHTML(`<iframe src="https://ec.sod.co.jp/prime/_ontime.php" 
-        //                                 style="display:none;" referrerpolicy="no-referrer" sandbox>
-        //                            </iframe>`), 
-        //     document.getElementById('topmenu'));
 
-        let previewSearchSources = document.getElementsByClassName('btn_videoplayer').length > 0 ? [nativeDmm] : [javTrailer, dmm, jav321, kv];
-        Promise.all(
-            previewSearchSources.map(source => source().catch(err => {GM_log(err); return;}))
-        ).then(responses => {
-            GM_log(responses);
+        // 3. Try to extract video URL and create video element
+        try {
+            const videoUrl = await this.extractVideoUrlFromJavTrailers(contentId);
 
-            let videoHtml = responses
-                                .filter(response => response != null
-                                        && this.includesEditionNumber(response)
-                                        && !response.includes('//_sample.mp4'))
-                                .map(response => `<source src="${response}">`)
-                                .join('');
-            if (videoHtml != '') {
-                let previewHtml = `
-                    <div id="preview">
-                        <video controls onloadstart="this.volume=0.5">
-                            <meta name="referrer" content="no-referrer">
-                            ${videoHtml}
-                        </video>
-                    </div>
-                `;
-                insertAfter(createElementFromHTML(previewHtml), document.getElementById('torrents'));
+            if (videoUrl) {
+                // Create video element
+                const videoElement = document.createElement('video');
+                videoElement.src = videoUrl;
+                videoElement.controls = true;
+                videoElement.volume = 0.5;
+
+                // Create preview container
+                const previewContainer = document.createElement('div');
+                previewContainer.id = 'preview';
+                previewContainer.appendChild(videoElement);
+
+                // Insert after torrents section
+                insertAfter(previewContainer, document.getElementById('torrents'));
+
+                GM_log('Video preview added successfully');
+            } else {
+                GM_log('Could not extract video URL for preview');
             }
-        });
+        } catch (error) {
+            GM_log(`Error creating video preview: ${error}`);
+        }
     }
 
     includesEditionNumber(str) {
