@@ -807,17 +807,49 @@ class MiniDriver {
 
             const contentId = contentIdMatch[1];
 
-            // 5. Validate content ID format
-            if (!contentId || contentId.length < 8 || contentId.length > 12) {
-                GM_log('Invalid content ID format: ' + contentId);
-                return null;
-            }
-
-            GM_log('Extracted content ID: ' + contentId);
+            GM_log('Extracted content ID from previewthumbs: ' + contentId);
             return contentId;
 
         } catch (error) {
             GM_log('Error extracting content ID from previewthumbs: ' + error);
+            return null;
+        }
+    }
+
+    async extractContentIdFromSearchApi() {
+        try {
+            // Use search API from test.js reference implementation
+            const javId = this.editionNumber;
+            const url = `https://search.javtrailers.com/indexes/videos/search?q=${javId}&page=1&sort=releaseDate:desc&hitsPerPage=1`;
+
+            GM_log('Trying search API for content ID: ' + javId);
+
+            const response = await gmFetch({
+                url: url,
+                timeout: 10000, // 10 second timeout
+                headers: {
+                    "authorization": "Bearer e8f7f0a9891342bcde8aeee404526aa3c94ba743b914d1211456201d64318788"
+                }
+            });
+
+            if (response.status >= 200 && response.status < 300) {
+                const data = JSON.parse(response.responseText);
+
+                // Extract content ID from API response (pattern from test.js)
+                if (data.hits && data.hits.length > 0 && data.hits[0].contentId) {
+                    const contentId = data.hits[0].contentId;
+                    GM_log('Extracted content ID from search API: ' + contentId);
+                    return contentId;
+                } else {
+                    GM_log('No content ID found in search API response');
+                    return null;
+                }
+            } else {
+                GM_log('Search API request failed with status: ' + response.status);
+                return null;
+            }
+        } catch (error) {
+            GM_log('Error extracting content ID from search API: ' + error);
             return null;
         }
     }
@@ -974,41 +1006,57 @@ class MiniDriver {
     }
 
     async getPreview() {
-        // 1. Extract content ID from previewthumbs div
-        const contentId = this.extractContentIdFromPreviewThumbs();
+        // Helper function to create video preview
+        const createVideoPreview = (videoUrl) => {
+            // Create video element
+            const videoElement = document.createElement('video');
+            videoElement.src = videoUrl;
+            videoElement.controls = true;
+            videoElement.volume = 0.5;
 
-        // 2. If no content ID found, log error and exit
-        if (!contentId) {
-            GM_log('Could not extract content ID from previewthumbs div');
-            return;
-        }
+            // Create preview container
+            const previewContainer = document.createElement('div');
+            previewContainer.id = 'preview';
+            previewContainer.appendChild(videoElement);
 
-        // 3. Try to extract video URL and create video element
-        try {
+            // Insert after torrents section
+            insertAfter(previewContainer, document.getElementById('torrents'));
+
+            GM_log('Video preview added successfully');
+        };
+
+        // 1. Try primary method (extract from previewthumbs div)
+        let contentId = this.extractContentIdFromPreviewThumbs();
+
+        // 2. Try to get video with extracted content ID
+        if (contentId) {
             const videoUrl = await this.extractVideoUrlFromJavTrailers(contentId);
-
             if (videoUrl) {
-                // Create video element
-                const videoElement = document.createElement('video');
-                videoElement.src = videoUrl;
-                videoElement.controls = true;
-                videoElement.volume = 0.5;
-
-                // Create preview container
-                const previewContainer = document.createElement('div');
-                previewContainer.id = 'preview';
-                previewContainer.appendChild(videoElement);
-
-                // Insert after torrents section
-                insertAfter(previewContainer, document.getElementById('torrents'));
-
-                GM_log('Video preview added successfully');
-            } else {
-                GM_log('Could not extract video URL for preview');
+                // Success - create video preview
+                createVideoPreview(videoUrl);
+                return;
             }
-        } catch (error) {
-            GM_log(`Error creating video preview: ${error}`);
+            // Video extraction failed - content ID is invalid
+            GM_log('Primary content ID extraction failed, trying search API');
+        } else {
+            GM_log('Could not extract content ID from previewthumbs div, trying search API');
         }
+
+        // 3. Try search API method
+        contentId = await this.extractContentIdFromSearchApi();
+        if (contentId) {
+            const videoUrl = await this.extractVideoUrlFromJavTrailers(contentId);
+            if (videoUrl) {
+                // Success - create video preview
+                createVideoPreview(videoUrl);
+                return;
+            }
+            // Video extraction failed - content ID is invalid
+            GM_log('Search API content ID extraction failed');
+        }
+
+        // 4. All methods failed
+        GM_log('Could not extract valid content ID using any method');
     }
 
     includesEditionNumber(str) {
