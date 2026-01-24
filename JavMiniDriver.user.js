@@ -475,8 +475,15 @@ class MiniDriverThumbnail {
 class MiniDriver {
     
     execute() {
-        let javUrl = new URL(window.location.href);
-        this.javVideoId = javUrl.searchParams.get('v');
+        if (window.location.href.includes('&v=') || window.location.href.includes('?v=')) {
+            let javUrl = new URL(window.location.href);
+            this.javVideoId = javUrl.searchParams.get('v');
+        } else {
+            let javUrl = window.location.href;
+            let ind1 = javUrl.lastIndexOf('/');
+            let ind2 = javUrl.lastIndexOf('.');
+            this.javVideoId = javUrl.substring(ind1 + 1, ind2);
+        }
 
         // Video page
         if (this.javVideoId != null) {
@@ -1149,7 +1156,12 @@ setCookie('over18', 18);
 // Style change
 addStyle();
 if (!window.location.href.includes('.php')
-        && (window.location.href.includes('?v=') || window.location.href.includes('&v='))) {
+        && (window.location.href.includes('?v=') 
+            || window.location.href.includes('&v=') 
+            || window.location.href.includes('javlibrary.com/cn/jav') 
+            || window.location.href.includes('javlibrary.com/en/jav')
+            || window.location.href.includes('javlibrary.com/ja/jav')
+            || window.location.href.includes('javlibrary.com/tw/jav'))) {
     new MiniDriver().execute();
 } else {
     new MiniDriverThumbnail().execute();
